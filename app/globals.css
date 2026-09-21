@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-primary: #cad401;
+  --brand-secondary: #12a3ff;
+  --brand-dark: #383838;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-white font-sans text-brand-dark antialiased;
+  }
+  h1, h2, h3, h4 {
+    @apply font-bold tracking-tight;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-5 py-3 text-sm font-semibold transition-colors;
+  }
+  .btn-primary {
+    @apply btn bg-brand-primary text-black hover:bg-brand-primary-dark;
+  }
+  .btn-secondary {
+    @apply btn bg-brand-secondary text-white hover:bg-brand-secondary-dark;
+  }
+  .btn-dark {
+    @apply btn bg-brand-dark text-white hover:bg-brand-dark-light;
+  }
+  .btn-outline {
+    @apply btn border-2 border-brand-dark text-brand-dark hover:bg-brand-dark hover:text-white;
+  }
+  .input {
+    @apply w-full rounded-md border border-gray-300 bg-white px-4 py-3 text-sm text-brand-dark outline-none transition-colors focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/40;
+  }
+  .label {
+    @apply mb-1 block text-sm font-semibold text-brand-dark;
+  }
+  .card {
+    @apply overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm;
+  }
+}
