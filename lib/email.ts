@@ -1,20 +1,18 @@
 /**
- * Pomocné funkce pro odesílání e-mailů přes Supabase Edge Function.
- * Edge function musí být nasazená (viz supabase/functions/send-email).
+ * Pomocné funkce pro odesílání e-mailů přes Resend.
+ * E-mail se posílá přes lokální API route /api/send-email,
+ * která má klíč RESEND_API_KEY na serveru (viz app/api/send-email/route.ts).
  */
 
-const FUNCTION_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL || ''}/functions/v1/send-email`
+const API_URL = '/api/send-email'
 
 export async function sendEmail(params: {
   to: string
   subject: string
   html: string
 }): Promise<{ ok: boolean; error?: string }> {
-  if (!FUNCTION_URL.startsWith('https://')) {
-    return { ok: false, error: 'Supabase není nakonfigurován.' }
-  }
   try {
-    const res = await fetch(FUNCTION_URL, {
+    const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),

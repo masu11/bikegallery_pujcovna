@@ -76,16 +76,35 @@ export default function BikeCalendar({
     const state = dayStates.get(format(day, 'yyyy-MM-dd'))
     if (state === 'occupied' || state === 'blocked') return
 
-    if (!selectedStart || (selectedStart && selectedEnd)) {
+    const start = selectedStart ? new Date(selectedStart + 'T00:00:00') : null
+    const end = selectedEnd ? new Date(selectedEnd + 'T00:00:00') : null
+    // Termín je „kompletní“, když máme začátek i konec a liší se (reálný rozsah)
+    const complete = start !== null && end !== null && !isSameDay(start, end)
+
+    if (!start || complete) {
+      // Začínáme nový výběr (prvý klik)
       onSelect(format(day, 'yyyy-MM-dd'), format(day, 'yyyy-MM-dd'))
-    } else {
-      const start = new Date(selectedStart + 'T00:00:00')
-      if (isBefore(day, start)) {
-        onSelect(format(day, 'yyyy-MM-dd'), selectedStart)
-      } else {
-        onSelect(selectedStart, format(day, 'yyyy-MM-dd'))
-      }
+      return
     }
+
+    // Rozšířujeme výběr na rozsah (druhý klik = poslední den)
+    const rangeStart = isBefore(day, start) ? day : start
+    const rangeEnd = isBefore(day, start) ? start : day
+    if (isRangeBlocked(rangeStart, rangeEnd)) {
+      // Rozsah obsahuje nevolný den — začínáme nový výběr od kliknutého dne
+      onSelect(format(day, 'yyyy-MM-dd'), format(day, 'yyyy-MM-dd'))
+      return
+    }
+    onSelect(format(rangeStart, 'yyyy-MM-dd'), format(rangeEnd, 'yyyy-MM-dd'))
+  }
+
+  /** Vrací true, když v rozsahu je den, který není volný (obsazený/rezervovaný/blokovaný). */
+  function isRangeBlocked(from: Date, to: Date): boolean {
+    for (const d of eachDayOfInterval({ start: from, end: to })) {
+      const s = dayStates.get(format(d, 'yyyy-MM-dd'))
+      if (s === 'occupied' || s === 'blocked' || s === 'reserved') return true
+    }
+    return false
   }
 
   function isInRange(day: Date): boolean {
@@ -102,6 +121,7 @@ export default function BikeCalendar({
   }
 
   const weekdays = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne']
+  const selectionComplete = Boolean(selectedStart && selectedEnd && selectedStart !== selectedEnd)
 
   return (
     <div>
@@ -123,6 +143,25 @@ export default function BikeCalendar({
         >
           {format(addMonths(month, 1), 'LLLL', { locale: cs })} →
         </button>
+      </div>
+
+      <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
+        <span>
+          {selectionComplete
+            ? 'Klikněte den pro nový termín'
+            : selectedStart
+              ? 'Klikněte poslední den termínu'
+              : 'Klikněte první a poslední den termínu'}
+        </span>
+        {selectedStart && (
+          <button
+            type="button"
+            onClick={() => onSelect('', '')}
+            className="font-semibold text-brand-secondary hover:underline"
+          >
+            Vyčistit
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-7 gap-1 text-center">
