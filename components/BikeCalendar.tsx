@@ -15,6 +15,7 @@ import {
   startOfDay,
 } from 'date-fns'
 import { cs } from 'date-fns/locale'
+import { isNonWorkingDay } from '@/lib/holidays'
 
 export type DayState = 'free' | 'reserved' | 'occupied' | 'blocked'
 
@@ -22,6 +23,8 @@ export interface CalendarReservation {
   start_date: string
   end_date: string
   status: 'pending' | 'reserved' | 'occupied'
+  /** ID varianty kola, pro kterou rezervace platí (pro filtrování v kalendáři). */
+  bike_variant_id?: string
 }
 
 interface BikeCalendarProps {
@@ -30,6 +33,8 @@ interface BikeCalendarProps {
   selectedEnd: string | null
   onSelect: (start: string, end: string) => void
   minDate?: Date
+  /** Dodatečné blokované dny (např. ručně spravované v administraci). */
+  blockedDays?: string[]
 }
 
 const dayStateStyles: Record<DayState, string> = {
@@ -45,9 +50,12 @@ export default function BikeCalendar({
   selectedEnd,
   onSelect,
   minDate,
+  blockedDays = [],
 }: BikeCalendarProps) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
   const [hoverDate, setHoverDate] = useState<Date | null>(null)
+
+  const blockedSet = useMemo(() => new Set(blockedDays), [blockedDays])
 
   const dayStates = useMemo(() => {
     const map = new Map<string, DayState>()
@@ -71,8 +79,14 @@ export default function BikeCalendar({
   const today = startOfDay(new Date())
   const min = minDate ? startOfDay(minDate) : today
 
+  /** Den nelze vybrat jako začátek/konec (víkend, svátek, ručně blokovaný). */
+  function isUnselectable(day: Date): boolean {
+    return isNonWorkingDay(day) || blockedSet.has(format(day, 'yyyy-MM-dd'))
+  }
+
   function handleDayClick(day: Date) {
     if (isBefore(day, min)) return
+    if (isUnselectable(day)) return
     const state = dayStates.get(format(day, 'yyyy-MM-dd'))
     if (state === 'occupied' || state === 'blocked') return
 
@@ -87,7 +101,7 @@ export default function BikeCalendar({
       return
     }
 
-    // Rozšířujeme výběr na rozsah (druhý klik = poslední den)
+    // Rozšiřujeme výběr na rozsah (druhý klik = poslední den)
     const rangeStart = isBefore(day, start) ? day : start
     const rangeEnd = isBefore(day, start) ? start : day
     if (isRangeBlocked(rangeStart, rangeEnd)) {
@@ -175,6 +189,7 @@ export default function BikeCalendar({
           const state: DayState = dayStates.get(key) ?? 'free'
           const inMonth = isSameMonth(day, month)
           const past = isBefore(day, min)
+          const unselectable = isUnselectable(day)
           const selected = isInRange(day)
           const hover = isInHoverRange(day)
           const isStart = selectedStart && isSameDay(day, new Date(selectedStart + 'T00:00:00'))
@@ -182,6 +197,7 @@ export default function BikeCalendar({
 
           let cls = dayStateStyles[state]
           if (past) cls = 'bg-gray-50 text-gray-300'
+          if (unselectable && !selected) cls = 'bg-gray-100 text-gray-400 line-through'
           if (selected) cls = 'bg-brand-secondary text-white font-bold'
           if (hover) cls = 'bg-brand-secondary/30 text-brand-dark'
           if (isStart || isEnd) cls = 'bg-brand-secondary-dark text-white font-bold'
@@ -190,7 +206,7 @@ export default function BikeCalendar({
             <button
               key={key}
               type="button"
-              disabled={past || state === 'occupied' || state === 'blocked'}
+              disabled={past || unselectable || state === 'occupied' || state === 'blocked'}
               onMouseEnter={() => setHoverDate(day)}
               onMouseLeave={() => setHoverDate(null)}
               onClick={() => handleDayClick(day)}
@@ -213,6 +229,9 @@ export default function BikeCalendar({
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded bg-red-100 ring-1 ring-red-300" /> Obsazené
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded bg-gray-100 ring-1 ring-gray-300" /> Víkend / svátek
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded bg-brand-secondary" /> Vybrané

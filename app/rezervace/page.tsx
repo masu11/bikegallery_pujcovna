@@ -16,6 +16,7 @@ export default function ReservationPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [emailWarning, setEmailWarning] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     name: '',
@@ -121,7 +122,7 @@ export default function ReservationPage() {
     }
 
     // Odeslání potvrzovacího e-mailu klientovi
-    await sendEmail({
+    const emailResult = await sendEmail({
       to: form.email,
       subject: `Rezervace ${reservationNumber} — potvrzení požadavku`,
       html: confirmationEmailHtml({
@@ -136,6 +137,11 @@ export default function ReservationPage() {
     clearCart()
     setItems([])
     setSuccess(reservationNumber)
+    setEmailWarning(
+      emailResult.ok
+        ? null
+        : emailResult.error ?? 'Potvrzovací e-mail se nepodařilo odeslat.',
+    )
     setSubmitting(false)
   }
 
@@ -154,6 +160,16 @@ export default function ReservationPage() {
             Na váš e-mail jsme odeslali potvrzení. Jakmile rezervaci potvrdíme, obdržíte e-mail
             s QR kódem na platbu.
           </p>
+          {emailWarning && (
+            <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-left text-sm text-amber-800">
+              <p className="font-semibold">Upozornění k e-mailu</p>
+              <p className="mt-1">{emailWarning}</p>
+              <p className="mt-1 text-xs">
+                Rezervace je uložená, ale potvrzovací e-mail se nepodařilo doručit. Kontaktujte nás
+                prosím telefonicky nebo e-mailem.
+              </p>
+            </div>
+          )}
           <Link href="/galerie" className="btn-primary mt-6">
             Zpět do galerie
           </Link>

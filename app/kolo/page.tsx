@@ -81,12 +81,13 @@ function BikeDetailContent() {
         reservation_items: { bike_variant_id: string }[]
       })[]
       ) {
-        const overlaps = r.reservation_items?.some((item) => variantIds.has(item.bike_variant_id))
-        if (overlaps) {
+        const matching = r.reservation_items?.find((item) => variantIds.has(item.bike_variant_id))
+        if (matching) {
           cal.push({
             start_date: r.start_date,
             end_date: r.end_date,
             status: r.status as 'pending' | 'reserved' | 'occupied',
+            bike_variant_id: matching.bike_variant_id,
           })
         }
       }
@@ -103,6 +104,12 @@ function BikeDetailContent() {
   const selectedVariant = useMemo(
     () => variants.find((v) => v.id === selectedVariantId) ?? null,
     [variants, selectedVariantId],
+  )
+
+  // Rezervace pouze pro vybranou variantu (každá varianta má vlastní kalendář)
+  const variantReservations = useMemo(
+    () => reservations.filter((r) => !r.bike_variant_id || r.bike_variant_id === selectedVariantId),
+    [reservations, selectedVariantId],
   )
 
   const days = useMemo(() => {
@@ -234,7 +241,7 @@ function BikeDetailContent() {
           <div className="mt-6 rounded-lg border border-gray-200 p-4">
             <p className="label">Vyberte termín půjčení</p>
             <BikeCalendar
-              reservations={reservations}
+              reservations={variantReservations}
               selectedStart={selectedStart}
               selectedEnd={selectedEnd}
               onSelect={(start, end) => {

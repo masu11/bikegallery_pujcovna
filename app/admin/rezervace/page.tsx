@@ -35,6 +35,7 @@ export default function AdminReservations() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [bankIban, setBankIban] = useState('')
   const [bankBeneficiary, setBankBeneficiary] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
 
   // Ruční vytvoření rezervace
   const [bikes, setBikes] = useState<Bike[]>([])
@@ -223,7 +224,7 @@ export default function AdminReservations() {
             message: `Rezervace ${r.reservation_number}`,
           })
           const qrSvg = renderToStaticMarkup(<QRCodeSVG value={qrValue} size={200} />)
-          await sendEmail({
+          const emailResult = await sendEmail({
             to: r.customer_email,
             subject: `Rezervace ${r.reservation_number} — potvrzeno, QR kód na platbu`,
             html: qrEmailHtml({
@@ -236,6 +237,13 @@ export default function AdminReservations() {
               bankBeneficiary: bankBeneficiary || 'Bike Gallery',
             }),
           })
+          setNotice(
+            emailResult.ok
+              ? `E-mail s QR kódem byl odeslán na ${r.customer_email}.`
+              : `E-mail se nepodařilo odeslat: ${
+                  emailResult.error ?? 'neznámá chyba'
+                } (příjemce ${r.customer_email})`,
+          )
         }
       }
     }
@@ -246,6 +254,12 @@ export default function AdminReservations() {
   return (
     <div>
       <h1 className="text-2xl font-black text-brand-dark">Rezervace</h1>
+
+      {notice && (
+        <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          {notice}
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
@@ -477,30 +491,128 @@ export default function AdminReservations() {
 
               {expanded === r.id && (
                 <div className="border-t border-gray-100 p-4">
-                  <p className="text-sm text-gray-600">
-                    <strong>Adresa:</strong> {r.customer_address || '—'}
-                  </p>
-                  {r.notes && (
-                    <p className="mt-1 text-sm text-gray-600">
-                      <strong>Poznámka:</strong> {r.notes}
-                    </p>
-                  )}
-                  <p className="mt-1 text-sm text-gray-600">
-                    <strong>Sleva:</strong> {formatPrice(r.discount_amount)}
-                  </p>
-                  <div className="mt-3">
+                  {/* Základní údaje */}
+                  <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Číslo rezervace
+                      </p>
+                      <p className="mt-0.5 font-semibold text-brand-dark">{r.reservation_number}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Status</p>
+                      <p className="mt-0.5">
+                        <span
+                          className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${statusColors[r.status]}`}
+                        >
+                          {statusLabels[r.status]}
+                        </span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Vytvořeno
+                      </p>
+                      <p className="mt-0.5">{new Date(r.created_at).toLocaleString('cs-CZ')}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Termín</p>
+                      <p className="mt-0.5">
+                        {r.start_date} → {r.end_date}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Počet dní
+                      </p>
+                      <p className="mt-0.5">{calcDays(r.start_date, r.end_date)} dní</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Celková cena
+                      </p>
+                      <p className="mt-0.5 font-semibold text-brand-dark">
+                        {formatPrice(r.total_price)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Zákazník */}
+                  <div className="mt-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Zákazník</p>
+                    <div className="mt-1 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                      <p>
+                        <span className="text-gray-500">Jméno:</span> {r.customer_name}
+                      </p>
+                      <p>
+                        <span className="text-gray-500">E-mail:</span>{' '}
+                        <a href={`mailto:${r.customer_email}`} className="text-brand-secondary hover:underline">
+                          {r.customer_email}
+                        </a>
+                      </p>
+                      <p>
+                        <span className="text-gray-500">Telefon:</span> {r.customer_phone}
+                      </p>
+                      <p>
+                        <span className="text-gray-500">Adresa:</span> {r.customer_address || '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Finance + poznámka */}
+                  <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Sleva
+                      </p>
+                      <p className="mt-0.5 text-green-700">
+                        {r.discount_amount > 0 ? `−${formatPrice(r.discount_amount)}` : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Poznámka
+                      </p>
+                      <p className="mt-0.5 whitespace-pre-wrap text-gray-700">
+                        {r.notes || '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Kola */}
+                  <div className="mt-4">
                     <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Kola</p>
                     {r.items.length === 0 ? (
                       <p className="mt-1 text-sm text-gray-500">Žádné položky.</p>
                     ) : (
-                      <ul className="mt-1 space-y-1 text-sm">
-                        {r.items.map((item) => (
-                          <li key={item.id} className="text-gray-700">
-                            {item.bike_name} · {item.variant_label} · {item.days} dní ·{' '}
-                            {formatPrice(item.subtotal)}
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="mt-1 overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
+                              <th className="py-1.5 pr-3 font-semibold">Kolo</th>
+                              <th className="py-1.5 pr-3 font-semibold">Varianta</th>
+                              <th className="py-1.5 pr-3 font-semibold">Dny</th>
+                              <th className="py-1.5 pr-3 font-semibold">Cena / den</th>
+                              <th className="py-1.5 font-semibold">Mezisoučet</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {r.items.map((item) => (
+                              <tr key={item.id} className="border-b border-gray-100">
+                                <td className="py-1.5 pr-3 text-gray-700">{item.bike_name}</td>
+                                <td className="py-1.5 pr-3 text-gray-700">{item.variant_label}</td>
+                                <td className="py-1.5 pr-3 text-gray-700">{item.days}</td>
+                                <td className="py-1.5 pr-3 text-gray-700">
+                                  {formatPrice(item.price_per_day)}
+                                </td>
+                                <td className="py-1.5 font-semibold text-gray-700">
+                                  {formatPrice(item.subtotal)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
 
