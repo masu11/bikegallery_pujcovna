@@ -1,0 +1,14 @@
+# Memory Bank & Context Rules
+
+Všechny informace o projektu uchovávej ve složce `memory-bank/`.
+
+## Povinný postup pro každý úkol:
+
+1. **Na začátku úkolu (Čtení):**
+   - Před započetím práce si vždy přečti soubory ve složce `memory-bank/` (`projectbrief.md`, `activeContext.md`, `progress.md`), abys měl kompletní kontext.
+
+2. **Před dokončením úkolu (Automatický zápis):**
+   - Jakmile dokončíš zadanou práci nebo provedes změny v kódu, **AUTOMATICKY** uprav soubory v `memory-bank/`:
+     - Do `activeContext.md` zapiš aktuální stav aplikace a co se právě stalo.
+     - V `progress.md` odškrtni hotové úkoly a zapiš další plánované kroky.
+   - Nečekej na zvláštní výzvu od uživatele! Aktualizace Memory Bank je povinný finální krok každé tvojí odpovědi.
