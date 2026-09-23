@@ -6,7 +6,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import { supabase, isSupabaseConfigured, formatPrice } from '@/lib/supabase'
 import type { Bike, BikeVariant, Discount, Reservation, ReservationItem } from '@/lib/types'
 import QRCode from '@/components/QRCode'
-import { buildQrPaymentString } from '@/lib/qr'
+import { buildQrPaymentString, isValidIban } from '@/lib/qr'
+import { svgToPngDataUri, base64ToBlob } from '@/lib/qrImage'
 import { sendEmail, qrEmailHtml } from '@/lib/email'
 import { calcDays, calcPrice } from '@/lib/pricing'
 
@@ -222,8 +223,31 @@ export default function AdminReservations() {
             amount: r.total_price,
             variableSymbol: r.reservation_number.replace(/\D/g, '').slice(0, 10) || '1',
             message: `Rezervace ${r.reservation_number}`,
+            recipientName: bankBeneficiary || undefined,
           })
+          // E-mailové klienty nepodporují SVG a Gmail blokuje data: URI v obrázcích.
+          // QR proto uložíme do Supabase Storage a v e-mailu použijeme veřejný URL.
           const qrSvg = renderToStaticMarkup(<QRCodeSVG value={qrValue} size={200} />)
+          let qrUrl: string
+          try {
+            const qrPng = await svgToPngDataUri(qrSvg, 400)
+            const base64 = qrPng.split(',')[1]
+            const path = `qr/${r.id}.png`
+            const { error: upError } = await supabase.storage
+              .from('bike-photos')
+              .upload(path, base64ToBlob(base64, 'image/png'), {
+                contentType: 'image/png',
+                upsert: true,
+              })
+            if (upError) {
+              qrUrl = qrPng // fallback na data URI (funguje mimo Gmail)
+            } else {
+              const { data: urlData } = supabase.storage.from('bike-photos').getPublicUrl(path)
+              qrUrl = urlData.publicUrl
+            }
+          } catch {
+            qrUrl = qrSvg // fallback – e-mail se odešle, ale QR se v e-mailu nezobrazí
+          }
           const emailResult = await sendEmail({
             to: r.customer_email,
             subject: `Rezervace ${r.reservation_number} — potvrzeno, QR kód na platbu`,
@@ -233,8 +257,15 @@ export default function AdminReservations() {
               startDate: r.start_date,
               endDate: r.end_date,
               totalPrice: formatPrice(r.total_price),
-              qrSvg,
+              qrUrl,
               bankBeneficiary: bankBeneficiary || 'Bike Gallery',
+              items: r.items.map((it) => ({
+                bikeName: it.bike_name,
+                variantLabel: it.variant_label,
+                days: it.days,
+                pricePerDay: formatPrice(it.price_per_day),
+                subtotal: formatPrice(it.subtotal),
+              })),
             }),
           })
           setNotice(
@@ -623,6 +654,12 @@ export default function AdminReservations() {
                         Pošlete klientovi tento QR kód e-mailem. Po připsání platby změňte status
                         na „Obsazené“.
                       </p>
+                      {!isValidIban(bankIban) && (
+                        <p className="mt-2 rounded-md bg-red-50 p-2 text-xs text-red-700">
+                          ⚠ IBAN v nastavení vypadá neplatně (nyní: {bankIban}). Banka QR kód
+                          odmítne, dokud nezadáte správný IBAN v Nastavení.
+                        </p>
+                      )}
                       <div className="mt-3">
                         <QRCode
                           value={buildQrPaymentString({
@@ -630,6 +667,7 @@ export default function AdminReservations() {
                             amount: r.total_price,
                             variableSymbol: r.reservation_number.replace(/\D/g, '').slice(0, 10) || '1',
                             message: `Rezervace ${r.reservation_number}`,
+                            recipientName: bankBeneficiary || undefined,
                           })}
                         />
                       </div>

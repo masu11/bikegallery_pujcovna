@@ -42,6 +42,24 @@ export async function sendEmail(params: {
   }
 }
 
+/** Řádky tabulky kol pro e-mailové šablony. */
+function itemsRowsHtml(
+  items: { bikeName: string; variantLabel: string; days: number; pricePerDay: string; subtotal: string }[],
+): string {
+  return items
+    .map(
+      (it) => `
+    <tr>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.bikeName}</td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.variantLabel}</td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.days} dní</td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.pricePerDay}</td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.subtotal}</td>
+    </tr>`,
+    )
+    .join('')
+}
+
 /** HTML šablona potvrzení požadavku na rezervaci. */
 export function confirmationEmailHtml(params: {
   reservationNumber: string
@@ -49,6 +67,7 @@ export function confirmationEmailHtml(params: {
   startDate: string
   endDate: string
   totalPrice: string
+  items: { bikeName: string; variantLabel: string; days: number; pricePerDay: string; subtotal: string }[]
 }): string {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -59,21 +78,35 @@ export function confirmationEmailHtml(params: {
         <tr><td style="padding: 4px 12px 4px 0; color: #666;">Termín:</td><td style="padding: 4px 0; font-weight: bold;">${params.startDate} → ${params.endDate}</td></tr>
         <tr><td style="padding: 4px 12px 4px 0; color: #666;">Cena:</td><td style="padding: 4px 0; font-weight: bold;">${params.totalPrice}</td></tr>
       </table>
+      <h3 style="color: #383838;">Kola</h3>
+      <table style="border-collapse: collapse; width: 100%;">
+        <thead>
+          <tr style="background: #f5f5f5;">
+            <th style="padding: 6px 12px; text-align: left;">Kolo</th>
+            <th style="padding: 6px 12px; text-align: left;">Varianta</th>
+            <th style="padding: 6px 12px; text-align: left;">Dny</th>
+            <th style="padding: 6px 12px; text-align: left;">Cena/den</th>
+            <th style="padding: 6px 12px; text-align: left;">Mezisoučet</th>
+          </tr>
+        </thead>
+        <tbody>${itemsRowsHtml(params.items)}</tbody>
+      </table>
       <p>Jakmile rezervaci potvrdíme, obdržíte e-mail s QR kódem na platbu.</p>
       <p style="color: #999; font-size: 12px;">Bike Gallery Půjčovna</p>
     </div>
   `
 }
 
-/** HTML šablona potvrzení rezervace s QR kódem. */
+/** HTML šablona potvrzení rezervace s QR kódem (QR jako veřejný URL – SVG a data: URI e-mailové klienty nerenderují/blokují). */
 export function qrEmailHtml(params: {
   reservationNumber: string
   name: string
   startDate: string
   endDate: string
   totalPrice: string
-  qrSvg: string
+  qrUrl: string
   bankBeneficiary: string
+  items: { bikeName: string; variantLabel: string; days: number; pricePerDay: string; subtotal: string }[]
 }): string {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -85,8 +118,23 @@ export function qrEmailHtml(params: {
         <tr><td style="padding: 4px 12px 4px 0; color: #666;">Cena:</td><td style="padding: 4px 0; font-weight: bold;">${params.totalPrice}</td></tr>
         <tr><td style="padding: 4px 12px 4px 0; color: #666;">Příjemce:</td><td style="padding: 4px 0;">${params.bankBeneficiary}</td></tr>
       </table>
+      <h3 style="color: #383838;">Kola</h3>
+      <table style="border-collapse: collapse; width: 100%;">
+        <thead>
+          <tr style="background: #f5f5f5;">
+            <th style="padding: 6px 12px; text-align: left;">Kolo</th>
+            <th style="padding: 6px 12px; text-align: left;">Varianta</th>
+            <th style="padding: 6px 12px; text-align: left;">Dny</th>
+            <th style="padding: 6px 12px; text-align: left;">Cena/den</th>
+            <th style="padding: 6px 12px; text-align: left;">Mezisoučet</th>
+          </tr>
+        </thead>
+        <tbody>${itemsRowsHtml(params.items)}</tbody>
+      </table>
       <p>Pro zaplacení naskenujte QR kód bankovní aplikací:</p>
-      <div style="margin: 16px 0;">${params.qrSvg}</div>
+      <div style="margin: 16px 0;">
+        <img src="${params.qrUrl}" alt="QR kód na platbu" width="200" height="200" style="display:block; width:200px; height:200px;" />
+      </div>
       <p>Po připsání platby je termín definitivně obsazený.</p>
       <p style="color: #999; font-size: 12px;">Bike Gallery Půjčovna</p>
     </div>

@@ -103,6 +103,13 @@ create table if not exists public.profiles (
 create index if not exists idx_bikes_active on public.bikes(active);
 create index if not exists idx_variants_bike on public.bike_variants(bike_id);
 create index if not exists idx_photos_bike on public.photos(bike_id);
+
+-- Jedinečnost AKTIVNÝCH variant (barva + velikost) pro každé kolo – ochrana před duplicitami.
+-- POZOR: před vytvořením je nutné vyčistit existující duplicity (SQL v progress.md),
+-- jinak vytvoření indexu selhaje.
+create unique index if not exists uq_bike_variants_active
+  on public.bike_variants (bike_id, lower(color), lower(size))
+  where active = true;
 create index if not exists idx_reservations_dates on public.reservations(start_date, end_date);
 create index if not exists idx_reservations_status on public.reservations(status);
 create index if not exists idx_items_reservation on public.reservation_items(reservation_id);

@@ -16,7 +16,113 @@
 - Deploy: GitHub Pages (statický export) přes GitHub Actions
 - Repo: `masu11/bikegallery_pujcovna` → https://masu11.github.io/bikegallery_pujcovna
 
-## Poslední pracovní sezení (23. 9. 2026, večer)
+## Poslední pracovní sezení (23. 9. 2026, noc – 3. úkol, follow-up)
+
+Uživatel poslal raw e-mail: PNG data URI **byl** v e-mailu, ale **Gmail blokuje `data:` URI
+v obrázcích** → QR se nezobrazil. **Oprava:** QR PNG se nyní **uloží do Supabase Storage**
+(bucket `bike-photos`, cesta `qr/{reservation_id}.png`, `upsert: true`) a v e-mailu se použije
+**veřejný URL** (funguje ve všech klientoch). Fallback: data URI (mimo Gmail) → SVG.
+- `lib/qrImage.ts`: nový `base64ToBlob()` helper.
+- `lib/email.ts`: `qrEmailHtml` param přejmenovan `qrPng` → `qrUrl`.
+- `app/admin/rezervace/page.tsx`: upload QR do Storage + veřejný URL.
+- Ověřeno: `tsc --noEmit` + `npm run build` OK.
+
+## Předchozí pracovní sezení (23. 9. 2026, noc – 3. úkol)
+
+Uživatel nahlásil: **přidje e-mail o potvrzené rezervaci, ale QR kód nepřidje.** Navíc chce
+v potvrzovacím e-mailu větší detail – název a variantu kola.
+
+### Příčina
+- QR kód se v e-mailu posílal jako **SVG** (`renderToStaticMarkup(<QRCodeSVG …>)` vložený do HTML).
+  E-mailové klienty (Gmail, Outlook, Apple Mail…) **SVG v HTML e-mailu nerenderují** → e-mail přišel,
+  ale QR byl neviditelný.
+
+### Oprava
+- **Nový `lib/qrImage.ts`:** `svgToPngDataUri()` – konverze SVG → PNG data URI (canvas v browseru,
+  `'use client'`). PNG funguje ve všech e-mailových klientoch.
+- **`lib/email.ts`:** `qrEmailHtml` nyní používá `<img src="data:image/png…">` místo SVG a obě šablony
+  (`confirmationEmailHtml` + `qrEmailHtml`) mají **tabulku kol** (název, varianta, dny, cena/den, mezisoučet).
+- **`app/admin/rezervace/page.tsx`:** při potvrzení (status `reserved`) se QR převede na PNG
+  (fallback na SVG při chybě) a do e-mailu se posílají `items` (kola z rezervace).
+- **`app/rezervace/page.tsx`:** potvrzovací e-mail posílá `items` (kola z košíka).
+
+### Ověření
+- `npx tsc --noEmit` – bez chyb, `npm run build` – úspěšné (17 stránek).
+
+### Poznámka
+- QR v administraci (detail rezervace) zůstává SVG – v browseru funguje; PNG je jen pro e-mail.
+
+## Předchozí pracovní sezení (23. 9. 2026, noc – 2. úkol, follow-up)
+
+Uživatel spustil čistící SQL, ale **krok 2 (unikátní index) selhal**:
+`23505: Key (bike_id, lower(color), lower(size))=(00000000-0000-0000-0000-000000000001, černá, l) is duplicated`.
+Příčina: existují **aktivné duplicity s rezervacemi**, které starý krok 1 neskryl (skrýval jen duplicity
+bez rezervací). **Oprava:** nový krok 1 v `progress.md` skryje VŠE duplicity kromě jedné ponechané na
+skupinu (ta s rezervacemi, jinak nejstarší) – historie rezervací zůstane, varianty se jen skryjí.
+Uživatel má spustit nový SQL z `progress.md` (krok 1 + krok 2) znovu.
+
+## Předchozí pracovní sezení (23. 9. 2026, noc – 2. úkol)
+
+Uživatel nahlásil: **u jednoho kola se násobí varianty v tabulce `bike_variants` – při mazání přes rozhraní spíše přibývají (87 ks), ič už nic nepřidával.**
+
+### Příčina
+- Tabulka `bike_variants` **nemá unikátní kontraintu** na (bike_id, barva, velikost) – duplicity může vytvořit
+  starý kód („smazat vše + vložit znovu“), který se v prostředí uživatele ještě vykonává (např. starý JS
+  v cache browseru nebo nenasazená verze). Každé uložení pak zdvojuje varianty (exponenciální růst).
+- Synchronizace v `app/admin/kola/page.tsx` závisela na tom, že formulárové varianty mají `id`; při
+  dvojitém kliku na „Uložit“ (race condition, `setSaving` je asynchronní) mohla vložit duplicity.
+
+### Oprava
+- **`app/admin/kola/page.tsx`:** nová idempotentní synchronizace variant:
+  - deduplikace formulárových variant podle (barva + velikost, bez ohledu na velká/malá písmena),
+  - existující varianty se aktualizují (nejdřív podle `id`, pak podle barva+velikost),
+  - nové se vloží, odebrané se smažou (při FK chybě skryjí se `active = false`),
+  - ochrana před dvojitým klikem (`if (saving) return`).
+- **`supabase/schema.sql`:** nový **parciální unikátní index** `uq_bike_variants_active`
+  na (bike_id, lower(color), lower(size)) WHERE active = true – DB-level ochrana před duplicitami.
+  POZOR: před vytvořením je nutné vyčistit existující duplicity (SQL v `progress.md`).
+- **`memory-bank/progress.md`:** zlepšený čistící SQL (case-insensitive) + vytvoření indexu.
+
+### Ověření
+- `npx tsc --noEmit` – bez chyb, `npm run build` – úspěšné (17 stránek).
+
+### Důležité pro uživatele
+1. **Spustit čistící SQL** z `progress.md` v Supabase SQL Editor (krok 1 – skrytí duplicit, krok 2 – unikátní index).
+2. **Aktualizovat verziu aplikace** (nový build / hard refresh Ctrl+F5), aby se nevykonával starý JS.
+
+## Předchozí pracovní sezení (23. 9. 2026, noc)
+
+Uživatel nahlásil: **v rezervaci je vidět QR kód, ale aplikace mBank hlásí, že je nesprávný.**
+
+### Příčina
+- `lib/qr.ts` (`buildQrPaymentString`) generoval řetězec, který **neodpovídal standardu QR Platby (ČBA)**:
+  1. **Dvojitá hvězdička** po `SPD*1.0` – `['SPD*1.0*', 'ACC:...'].join('*')` dalo `SPD*1.0**ACC:...`.
+  2. **Špatný pořadok polí** – `AM` stál před `CC` a `MSG` před `X-VS` (standard vyžaduje `CC` → `AM` → `X-VS` → `MSG`).
+  3. **Chyběl CRC32 kontrolní součet** – mBank (a většina bank) ho vyžaduje.
+  4. **Chyběla závěrečná hvězdička** na konci řetězce.
+
+### Oprava
+- **`lib/qr.ts`:** kompletně přepsaný `buildQrPaymentString` – správný pořadok polí dle specifikace,
+  CRC-32 (IEEE 802.3) kontrolní součet, závěrečná hvězdička, sanitizace VS na číslice (max 10),
+  volitelný `recipientName` (pole `RN`). Nová funkce `isValidIban()` (mod 97) pro kontrolu IBAN.
+- **`app/admin/rezervace/page.tsx`:** oba volání `buildQrPaymentString` (QR v detailu + e-mail)
+  posílají `recipientName: bankBeneficiary`; v detailu rezervace se zobrazí červené varování,
+  pokud IBAN v nastavení je neplatný (seed `CZ0000000000000000000000` je neplatný!).
+- **`tsconfig.json`:** doplněn `"target": "es2017"` (chyběl → `tsc` defaultně es3 a hlásil chybu
+  iterace `Set` v `app/admin/kola/page.tsx`; navíc byl starý `tsconfig.tsbuildinfo` cache).
+
+### Ověření
+- Test v Node.js: CRC32("123456789") = CBF43926 (správný test vector), formát řetězce
+  `SPD*1.0*ACC:...*CC:CZK*AM:...*X-VS:...*MSG:...*RN:...*CRC32:XXXXXXXX*` OK,
+  IBAN validace (GB82…, DE89… platné; CZ000… neplatné) OK.
+- `npx tsc --noEmit` – bez chyb (po smazání starého `tsconfig.tsbuildinfo`).
+- `npm run build` – úspěšné (17 statických stránek).
+
+### Důležité pro uživatele
+- **Seed IBAN `CZ0000000000000000000000` je neplatný** – dokud v Nastavení (`/admin/nastaveni`)
+  nezadáte skutečný IBAN, banka QR kód odmítne. V detailu rezervace se nyní zobrazí varování.
+
+## Předchozí pracovní sezení (23. 9. 2026, večer)
 
 Uživatel nahlásil: **přidal obrázek v admin menu, ale beze změny – nic nevidí na webu ani v Storage → Files.**
 

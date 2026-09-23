@@ -140,6 +140,13 @@ export default function ReservationPage() {
         startDate: items[0].start_date,
         endDate: items[0].end_date,
         totalPrice: formatPrice(totals.total),
+        items: items.map((it) => ({
+          bikeName: it.bike_name,
+          variantLabel: it.variant_label,
+          days: it.days,
+          pricePerDay: formatPrice(it.price_per_day),
+          subtotal: formatPrice(it.price_per_day * it.days),
+        })),
       }),
     })
 

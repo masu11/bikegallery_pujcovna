@@ -86,6 +86,7 @@ export default function AdminBikes() {
   }
 
   async function handleSave() {
+    if (saving) return // ochrana před dvojitým klikem (setSaving je asynchronní)
     if (!form.name || !form.slug) {
       setMessage('Vyplňte název a slug.')
       return
@@ -128,37 +129,57 @@ export default function AdminBikes() {
     }
 
     if (bikeId) {
-      // Varianty: synchronizace (update existujících, insert nových, skrytí odebraných).
-      // POZOR: variantu, na kterou odkazuje rezervace (reservation_items), nelze smazat
-      // (FK bez ON DELETE CASCADE) – proto ji místo smazání skryjeme (active = false).
+      // Varianty: synchronizace (idempotentní, bez duplicit).
+      // - Existující varianty se aktualizují (nejdřív podle id, pak podle barva+velikost),
+      // - nové se vloží,
+      // - odebrané se smažou; pokud na ně odkazuje rezervace (FK bez CASCADE), skryjí se.
       const { data: existingVariants } = await supabase
         .from('bike_variants')
-        .select('id')
+        .select('id, color, size')
         .eq('bike_id', bikeId)
-      const existingIds = new Set((existingVariants ?? []).map((v) => v.id))
-      const formIds = new Set(variants.filter((v) => v.id).map((v) => v.id))
+      const existing = existingVariants ?? []
 
+      // Deduplikace formulárových variant (stejná barva+velikost se slučí)
+      const seen = new Set<string>()
+      const formVariants: { id?: string; color: string; size: string }[] = []
       for (const v of variants) {
-        if (v.id) {
-          await supabase
-            .from('bike_variants')
-            .update({ color: v.color, size: v.size, active: true })
-            .eq('id', v.id)
+        const key = `${v.color.trim().toLowerCase()}|${v.size.trim().toLowerCase()}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          formVariants.push({ id: v.id, color: v.color.trim(), size: v.size.trim() })
         }
       }
 
-      const newVariants = variants.filter((v) => !v.id)
-      if (newVariants.length > 0) {
-        await supabase.from('bike_variants').insert(
-          newVariants.map((v) => ({ bike_id: bikeId, color: v.color, size: v.size, active: true })),
-        )
+      const matchedIds = new Set<string>()
+
+      for (const fv of formVariants) {
+        // 1) Najít existující variantu: nejdřív podle id, pak podle (barva, velikost)
+        let match = fv.id ? existing.find((e) => e.id === fv.id) : null
+        if (!match) {
+          const key = `${fv.color.toLowerCase()}|${fv.size.toLowerCase()}`
+          match = existing.find(
+            (e) => `${e.color.toLowerCase()}|${e.size.toLowerCase()}` === key && !matchedIds.has(e.id),
+          )
+        }
+        if (match) {
+          matchedIds.add(match.id)
+          await supabase
+            .from('bike_variants')
+            .update({ color: fv.color, size: fv.size, active: true })
+            .eq('id', match.id)
+        } else {
+          await supabase
+            .from('bike_variants')
+            .insert({ bike_id: bikeId, color: fv.color, size: fv.size, active: true })
+        }
       }
 
-      for (const id of existingIds) {
-        if (!formIds.has(id)) {
-          const { error } = await supabase.from('bike_variants').delete().eq('id', id)
+      // Odebrané varianty (v DB, ale ne ve formuláře) – smazat nebo skryt
+      for (const e of existing) {
+        if (!matchedIds.has(e.id)) {
+          const { error } = await supabase.from('bike_variants').delete().eq('id', e.id)
           if (error) {
-            await supabase.from('bike_variants').update({ active: false }).eq('id', id)
+            await supabase.from('bike_variants').update({ active: false }).eq('id', e.id)
           }
         }
       }
