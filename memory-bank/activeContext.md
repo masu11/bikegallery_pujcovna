@@ -3,6 +3,10 @@
 > Aktuální stav projektu, poslední změny a otevřené otázky.
 > Aktualizováno: 2026-09-23
 
+## Pravidlo komunikace
+
+- **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
+
 ## Projekt
 
 **Bike Gallery Půjčovna** – rezervační systém půjčovny gravel kol.
@@ -12,7 +16,44 @@
 - Deploy: GitHub Pages (statický export) přes GitHub Actions
 - Repo: `masu11/bikegallery_pujcovna` → https://masu11.github.io/bikegallery_pujcovna
 
-## Poslední pracovní sezení (23. 9. 2026)
+## Poslední pracovní sezení (23. 9. 2026, večer)
+
+Uživatel nahlásil: **přidal obrázek v admin menu, ale beze změny – nic nevidí na webu ani v Storage → Files.**
+
+### Příčina (stejná jako odpoledne)
+- Nahrávání fotek v `app/admin/kola/page.tsx` ukládá do Supabase Storage bucketu `bike-photos`,
+  ale **bucket neexistuje**, protože SQL z `supabase/storage.sql` **nebyl ještě spuštěn** v Supabase SQL Editoru.
+- Uživatel **potvrdil, že storage.sql nespustil** a že ho spustí a zkusí nahrát fotku znovu.
+
+### Kontrola připravenosti
+- `public.is_admin()` je definovaná jako `security definer` v `supabase/schema.sql` (ř. 112) – vhodná pro storage politiky.
+- `supabase/storage.sql` je kompletní (bucket + 4 politiky) – po spuštění upload by měl fungovat.
+
+### Očekávaný další krok
+1. Supabase Dashboard → SQL Editor → spustit obsah `supabase/storage.sql` (stačí jednou).
+2. V administraci (`/admin/kola`) nahrát fotku znovu.
+3. Pokud se zobrazí chyba, zkopírovat text chyby sem.
+
+## Předchozí pracovní sezení (23. 9. 2026, odpoledne)
+
+Uživatel nahlásil: **v administraci vytvořil nové kolo a přidal lokální fotku (jpeg/png), ale fotka se nezobrazila.**
+
+### Příčina
+- Nahrávání fotek v `app/admin/kola/page.tsx` používá Supabase Storage bucket `bike-photos`,
+  ale **bucket nikde nebyl vytvořen** (ani v `schema.sql`, ani v `seed.sql`) a nebyly ani
+  storage RLS politiky → upload selhával (chyba se zobrazovala, ale fotka se neuložila).
+- Navíc chyba při ukládání fotky do tabulky `photos` se **ignorovala** (insert bez kontroly error).
+
+### Oprava
+- **Nový `supabase/storage.sql`:** vytvoření veřejného bucketu `bike-photos` + storage politiky
+  (veřejné čtení, nahrávání/úprava/mazání jen pro admina přes `public.is_admin()`).
+  **Nutné spustit v Supabase SQL Editor** (stačí jednou).
+- **`app/admin/kola/page.tsx`:**
+  - sanitizace názvu souboru (bez diakritiky, mezer a speciálních znaků) + `contentType` při uploadu,
+  - kontrola chyby při insertu do `photos` (chyba se nyní zobrazí),
+  - nápověda v UI, že je potřeba bucket `bike-photos` (SQL z `supabase/storage.sql`).
+
+## Předchozí pracovní sezení (23. 9. 2026, dopoledne)
 
 Uživatel nahlásil 3 okruhy problémů, které jsme vyřešili:
 

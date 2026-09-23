@@ -165,13 +165,20 @@ export default function AdminBikes() {
 
       // Fotka: pokud je URL, vložíme jako hlavní
       if (photoUrl) {
-        await supabase.from('photos').insert({
+        const { error: photoError } = await supabase.from('photos').insert({
           bike_id: bikeId,
           url: photoUrl,
           alt: form.name,
           is_main: true,
           sort_order: 0,
         })
+        if (photoError) {
+          setMessage(`Kolo uloženo, ale fotku se nepodařilo uložit: ${photoError.message}`)
+          setSaving(false)
+          cancel()
+          load()
+          return
+        }
       }
     }
 
@@ -321,6 +328,10 @@ export default function AdminBikes() {
               <p className="mt-1 text-xs text-gray-500">
                 Vložte URL fotky (např. z bikegallery.cz) nebo nahrajte soubor.
               </p>
+              <p className="mt-1 text-xs text-gray-400">
+                Nahrávání souborů vyžaduje bucket „bike-photos“ v Supabase Storage –
+                spusťte SQL z <code>supabase/storage.sql</code>.
+              </p>
               <input
                 className="input mt-3"
                 placeholder="https://…/fotka.jpg"
@@ -334,10 +345,19 @@ export default function AdminBikes() {
                 onChange={async (e) => {
                   const file = e.target.files?.[0]
                   if (!file) return
-                  const path = `bikes/${Date.now()}-${file.name}`
+                  // Bezpečný název souboru: bez diakritiky, mezer a speciálních znaků
+                  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+                  const base = file.name
+                    .replace(/\.[^.]+$/, '')
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[^a-zA-Z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '')
+                    .toLowerCase()
+                  const path = `bikes/${Date.now()}-${base || 'foto'}.${ext}`
                   const { error } = await supabase.storage
                     .from('bike-photos')
-                    .upload(path, file)
+                    .upload(path, file, { contentType: file.type })
                   if (error) {
                     setMessage(`Nahrání selhalo: ${error.message}`)
                     return

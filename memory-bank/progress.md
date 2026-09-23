@@ -33,14 +33,29 @@
 - [x] Dokumentace omezení `onboarding@resend.dev` v `.env` / `.env.example`
 - [x] Supabase Edge Function `send-email` (připravená, nenasazená)
 
-## Poslední sezení (23. 9. 2026) ✅
+## Poslední sezení (23. 9. 2026, odpoledne) ✅
+
+- [x] **Oprava:** fotka z lokálního souboru (jpeg/png) se nezobrazovala → chyběl Supabase Storage bucket `bike-photos` a storage RLS politiky
+- [x] **Novinka:** `supabase/storage.sql` – vytvoření veřejného bucketu `bike-photos` + politiky (čtení veřejné, nahrávání/úprava/mazání jen admin) – **nutné spustit v Supabase SQL Editor**
+- [x] **Oprava:** `app/admin/kola/page.tsx` – sanitizace názvu souboru + `contentType` při uploadu, kontrola chyby při insertu do `photos`, nápověda v UI o bucketu
+- [ ] Ověření: `tsc --noEmit` + `npm run build` (v tomto prostředí chybí Node.js/npm – ověřit lokálně)
+
+## Poslední sezení (23. 9. 2026, večer) 🔜
+
+- [x] **Diagnóza:** uživatel přidal obrázek v admin menu, ale nic neviděl na webu ani v Storage → Files → příčina: bucket `bike-photos` neexistuje (storage.sql nespuštěn)
+- [x] **Kontrola:** `public.is_admin()` je `security definer` v schema.sql – storage.sql je kompletní a po spuštění bude fungovat
+- [ ] **Uživatel spustí** `supabase/storage.sql` v Supabase SQL Editoru a zkusí nahrát fotku znovu
+- [ ] Pokud se zobrazí chyba při nahrávání – zkopírovat text chyby a opravit
+
+## Předchozí sezení (23. 9. 2026, dopoledne) ✅
 
 - [x] **Oprava:** RLS chyba při ukládání rezervace → ID se generuje na klientovi, insert bez `.select()` (`app/rezervace/page.tsx`)
 - [x] **Oprava:** e-mail "Unexpected token '<'" → kontrola `content-type` + podpora `NEXT_PUBLIC_SEND_EMAIL_URL` (Edge Function) v `lib/email.ts`
 - [x] **Oprava:** duplicitní varianty u kola → synchronizace variant (update/insert/skrytí odebraných) v `app/admin/kola/page.tsx`
 - [x] **Novinka:** role-based menu v administraci (`app/admin/layout.tsx`) – pracovník vidí jen Přehled a Rezervace
 - [x] **Novinka:** bezpečné čtení rezervací pro kalendář přes funkci `get_calendar_reservations()` (SQL v `supabase/schema.sql`, nutné spustit v Supabase)
-- [ ] Ověření: `tsc --noEmit` + `npm run build` (v tomto prostředí chybí Node.js/npm – ověřit lokálně)
+- [x] **Spuštěn dev server** (`npm run dev`) – aplikace běží na http://localhost:3000/ (HTTP 200, stránky `/`, `/admin/`, `/admin/kola`, `/kolo` kompilují se bez chyb)
+- [x] **Pravidlo:** komunikace v chatu vždy jenom česky – zapsáno do `.clinerules`
 
 ## Předchozí sezení (22. 9. 2026) ✅
 
@@ -52,6 +67,7 @@
 
 ## Na čem pracujeme / plánováno 🔜
 
+- [ ] **Spustit v Supabase SQL Editor:** `supabase/storage.sql` (bucket `bike-photos` + politiky) – jinak nahrávání lokálních fotek v administraci nefunguje
 - [ ] **Spustit v Supabase SQL Editor:** novou funkci `get_calendar_reservations()` (kód v `supabase/schema.sql`) – jinak kalendář pro veřejnost neukáže rezervace
 - [ ] **Vyčistit duplicitní varianty v DB** (např. Cannondale Topstone 2) – SQL skript níže
 - [ ] **Produkční e-maily:** nasadit Supabase Edge Function `send-email` a nastavit `NEXT_PUBLIC_SEND_EMAIL_URL` (GitHub Pages nepodporuje API route)
