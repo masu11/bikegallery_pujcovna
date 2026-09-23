@@ -131,6 +131,30 @@ as $$
   )
 $$;
 
+-- Bezpečné čtení rezervací pro kalendář (veřejnost).
+-- Vrací POUZE údaje potřebné pro kalendář (termín, status, variantu),
+-- ne osobní údaje zákazníků. Funkce běží s právy definera (obchází RLS),
+-- ale vrací jen omezenou sadu sloupců.
+create or replace function public.get_calendar_reservations()
+returns table (
+  id uuid,
+  start_date date,
+  end_date date,
+  status text,
+  bike_variant_id uuid
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select r.id, r.start_date, r.end_date, r.status, ri.bike_variant_id
+  from public.reservations r
+  join public.reservation_items ri on ri.reservation_id = r.id
+  where r.status in ('pending', 'reserved', 'occupied')
+$$;
+
+grant execute on function public.get_calendar_reservations() to anon, authenticated;
+
 -- ---------- RLS: aktivace ----------
 alter table public.bikes enable row level security;
 alter table public.bike_variants enable row level security;

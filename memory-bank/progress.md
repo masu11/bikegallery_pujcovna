@@ -1,7 +1,7 @@
 # Progress
 
 > Přehled hotové a plánované práce.
-> Aktualizováno: 2026-09-22
+> Aktualizováno: 2026-09-23
 
 ## Hotovo ✅
 
@@ -33,7 +33,16 @@
 - [x] Dokumentace omezení `onboarding@resend.dev` v `.env` / `.env.example`
 - [x] Supabase Edge Function `send-email` (připravená, nenasazená)
 
-## Poslední sezení (22. 9. 2026) ✅
+## Poslední sezení (23. 9. 2026) ✅
+
+- [x] **Oprava:** RLS chyba při ukládání rezervace → ID se generuje na klientovi, insert bez `.select()` (`app/rezervace/page.tsx`)
+- [x] **Oprava:** e-mail "Unexpected token '<'" → kontrola `content-type` + podpora `NEXT_PUBLIC_SEND_EMAIL_URL` (Edge Function) v `lib/email.ts`
+- [x] **Oprava:** duplicitní varianty u kola → synchronizace variant (update/insert/skrytí odebraných) v `app/admin/kola/page.tsx`
+- [x] **Novinka:** role-based menu v administraci (`app/admin/layout.tsx`) – pracovník vidí jen Přehled a Rezervace
+- [x] **Novinka:** bezpečné čtení rezervací pro kalendář přes funkci `get_calendar_reservations()` (SQL v `supabase/schema.sql`, nutné spustit v Supabase)
+- [ ] Ověření: `tsc --noEmit` + `npm run build` (v tomto prostředí chybí Node.js/npm – ověřit lokálně)
+
+## Předchozí sezení (22. 9. 2026) ✅
 
 - [x] **Oprava:** kalendář zobrazoval rezervaci pro všechny varianty → nyní per-varianta
 - [x] **Oprava:** detail rezervace v administraci → kompletní údaje
@@ -43,12 +52,33 @@
 
 ## Na čem pracujeme / plánováno 🔜
 
-- [ ] Rozhodnutí o produkčním hostingu e-mailů (GitHub Pages nepodporuje API route)
-  - Varianta A: Vercel / Netlify (server-side)
-  - Varianta B: Supabase Edge Function `send-email` + přesměrování odesílání
+- [ ] **Spustit v Supabase SQL Editor:** novou funkci `get_calendar_reservations()` (kód v `supabase/schema.sql`) – jinak kalendář pro veřejnost neukáže rezervace
+- [ ] **Vyčistit duplicitní varianty v DB** (např. Cannondale Topstone 2) – SQL skript níže
+- [ ] **Produkční e-maily:** nasadit Supabase Edge Function `send-email` a nastavit `NEXT_PUBLIC_SEND_EMAIL_URL` (GitHub Pages nepodporuje API route)
 - [ ] Ověření vlastní domény v Resend + změna `RESEND_FROM` (aby e-maily chodily na libovolné adresy)
 - [ ] (Volitelné) UI v administraci pro ruční blokované dny (`blockedDays` prop je připraven)
 - [ ] Commit + push aktuálních změn na GitHub (změny zatím nejsou pushnuté)
+
+### SQL: vyčištění duplicitních variant (spustit v Supabase SQL Editor)
+
+```sql
+-- Skryje duplicitní varianty (stejné kolo + barva + velikost), které nemají rezervace.
+-- Ponechá viditelnou nejstarší variantu; varianty s rezervacemi zůstanou v historii.
+update public.bike_variants v
+set active = false
+where not exists (
+  select 1 from public.reservation_items ri where ri.bike_variant_id = v.id
+)
+and exists (
+  select 1
+  from public.bike_variants v2
+  where v2.bike_id = v.bike_id
+    and v2.color = v.color
+    and v2.size = v.size
+    and v2.id <> v.id
+    and (v2.created_at < v.created_at or (v2.created_at = v.created_at and v2.id < v.id))
+);
+```
 
 ## Poznámky / rizika
 

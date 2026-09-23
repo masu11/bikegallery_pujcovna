@@ -1,10 +1,15 @@
 /**
  * Pomocné funkce pro odesílání e-mailů přes Resend.
- * E-mail se posílá přes lokální API route /api/send-email,
- * která má klíč RESEND_API_KEY na serveru (viz app/api/send-email/route.ts).
+ *
+ * Cíl odeslání:
+ * - Lokálně (Next.js dev server): API route /api/send-email (klíč RESEND_API_KEY na serveru).
+ * - Produkce (GitHub Pages = statický hosting): API route NEexistuje, proto se použije
+ *   Supabase Edge Function. Nastavte NEXT_PUBLIC_SEND_EMAIL_URL na adresu funkce:
+ *   https://VAS_PROJECT_REF.supabase.co/functions/v1/send-email
  */
 
-const API_URL = '/api/send-email'
+const API_URL =
+  process.env.NEXT_PUBLIC_SEND_EMAIL_URL || '/api/send-email'
 
 export async function sendEmail(params: {
   to: string
@@ -17,6 +22,16 @@ export async function sendEmail(params: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     })
+
+    // Statický hosting (GitHub Pages) vrací místo JSON HTML 404 stránku.
+    const contentType = res.headers.get('content-type') ?? ''
+    if (!contentType.includes('application/json')) {
+      return {
+        ok: false,
+        error: `E-mailová služba neodpověděla JSON (HTTP ${res.status}). Na statickém hostingu API route nefunguje – nasaďte Supabase Edge Function a nastavte NEXT_PUBLIC_SEND_EMAIL_URL.`,
+      }
+    }
+
     const data = await res.json()
     if (!res.ok) {
       return { ok: false, error: data?.error ?? 'Chyba odeslání e-mailu.' }

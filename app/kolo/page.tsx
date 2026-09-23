@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase, isSupabaseConfigured, formatPrice } from '@/lib/supabase'
-import type { Bike, BikePhoto, BikeVariant, Discount, Reservation } from '@/lib/types'
+import type { Bike, BikePhoto, BikeVariant, Discount } from '@/lib/types'
 import BikeCalendar, { type CalendarReservation } from '@/components/BikeCalendar'
 import { calcDays, calcPrice } from '@/lib/pricing'
 import { addToCart } from '@/lib/cart'
@@ -65,10 +65,9 @@ function BikeDetailContent() {
           .eq('active', true)
           .order('size', { ascending: true }),
         supabase.from('discounts').select('*').eq('active', true),
-        supabase
-          .from('reservations')
-          .select('id, start_date, end_date, status, reservation_items(bike_variant_id)')
-          .in('status', ['pending', 'reserved', 'occupied']),
+        // Bezpečné čtení rezervací pro kalendář (veřejnost nemá SELECT na reservations,
+        // proto se používá security definer funkce get_calendar_reservations).
+        supabase.rpc('get_calendar_reservations'),
       ])
 
       setPhotos(photosRes.data ?? [])
@@ -76,21 +75,19 @@ function BikeDetailContent() {
       setDiscounts(discountsRes.data ?? [])
 
       const variantIds = new Set((variantsRes.data ?? []).map((v: BikeVariant) => v.id))
-      const cal: CalendarReservation[] = []
-      for (const r of (reservationsRes.data ?? []) as (Reservation & {
-        reservation_items: { bike_variant_id: string }[]
-      })[]
-      ) {
-        const matching = r.reservation_items?.find((item) => variantIds.has(item.bike_variant_id))
-        if (matching) {
-          cal.push({
-            start_date: r.start_date,
-            end_date: r.end_date,
-            status: r.status as 'pending' | 'reserved' | 'occupied',
-            bike_variant_id: matching.bike_variant_id,
-          })
-        }
-      }
+      const cal: CalendarReservation[] = ((reservationsRes.data ?? []) as {
+        start_date: string
+        end_date: string
+        status: string
+        bike_variant_id: string
+      }[])
+        .filter((r) => variantIds.has(r.bike_variant_id))
+        .map((r) => ({
+          start_date: r.start_date,
+          end_date: r.end_date,
+          status: r.status as 'pending' | 'reserved' | 'occupied',
+          bike_variant_id: r.bike_variant_id,
+        }))
       setReservations(cal)
 
       if (variantsRes.data && variantsRes.data.length > 0) {

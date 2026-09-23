@@ -25,7 +25,7 @@ export default function AdminBikes() {
   const [editing, setEditing] = useState<BikeFull | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [form, setForm] = useState(emptyForm)
-  const [variants, setVariants] = useState<{ color: string; size: string }[]>([])
+  const [variants, setVariants] = useState<{ id?: string; color: string; size: string }[]>([])
   const [photoUrl, setPhotoUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -41,7 +41,8 @@ export default function AdminBikes() {
       setBikes(
         data.map((b) => ({
           ...b,
-          variants: b.bike_variants ?? [],
+          // Skryté varianty (active = false) se v administraci nezobrazují
+          variants: (b.bike_variants ?? []).filter((v: BikeVariant) => v.active),
           photos: b.photos ?? [],
         })) as BikeFull[],
       )
@@ -74,7 +75,7 @@ export default function AdminBikes() {
       base_price_per_day: bike.base_price_per_day,
       active: bike.active,
     })
-    setVariants(bike.variants.map((v) => ({ color: v.color, size: v.size })))
+    setVariants(bike.variants.map((v) => ({ id: v.id, color: v.color, size: v.size })))
     setPhotoUrl('')
     setMessage(null)
   }
@@ -127,12 +128,39 @@ export default function AdminBikes() {
     }
 
     if (bikeId) {
-      // Varianty: smažeme a znovu vložíme (jednoduché pro v1)
-      await supabase.from('bike_variants').delete().eq('bike_id', bikeId)
-      if (variants.length > 0) {
+      // Varianty: synchronizace (update existujících, insert nových, skrytí odebraných).
+      // POZOR: variantu, na kterou odkazuje rezervace (reservation_items), nelze smazat
+      // (FK bez ON DELETE CASCADE) – proto ji místo smazání skryjeme (active = false).
+      const { data: existingVariants } = await supabase
+        .from('bike_variants')
+        .select('id')
+        .eq('bike_id', bikeId)
+      const existingIds = new Set((existingVariants ?? []).map((v) => v.id))
+      const formIds = new Set(variants.filter((v) => v.id).map((v) => v.id))
+
+      for (const v of variants) {
+        if (v.id) {
+          await supabase
+            .from('bike_variants')
+            .update({ color: v.color, size: v.size, active: true })
+            .eq('id', v.id)
+        }
+      }
+
+      const newVariants = variants.filter((v) => !v.id)
+      if (newVariants.length > 0) {
         await supabase.from('bike_variants').insert(
-          variants.map((v) => ({ bike_id: bikeId, color: v.color, size: v.size, active: true })),
+          newVariants.map((v) => ({ bike_id: bikeId, color: v.color, size: v.size, active: true })),
         )
+      }
+
+      for (const id of existingIds) {
+        if (!formIds.has(id)) {
+          const { error } = await supabase.from('bike_variants').delete().eq('id', id)
+          if (error) {
+            await supabase.from('bike_variants').update({ active: false }).eq('id', id)
+          }
+        }
       }
 
       // Fotka: pokud je URL, vložíme jako hlavní

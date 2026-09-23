@@ -6,12 +6,14 @@ import { usePathname } from 'next/navigation'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
+// Pracovník (worker) má podle RLS přístup jen k rezervacím a přehledu.
+// Správa kol, slev a nastavení je vyhrazena administrátorovi (admin).
 const navItems = [
-  { href: '/admin', label: 'Přehled' },
-  { href: '/admin/rezervace', label: 'Rezervace' },
-  { href: '/admin/kola', label: 'Kola' },
-  { href: '/admin/slevy', label: 'Slevy' },
-  { href: '/admin/nastaveni', label: 'Nastavení' },
+  { href: '/admin', label: 'Přehled', roles: ['admin', 'worker'] },
+  { href: '/admin/rezervace', label: 'Rezervace', roles: ['admin', 'worker'] },
+  { href: '/admin/kola', label: 'Kola', roles: ['admin'] },
+  { href: '/admin/slevy', label: 'Slevy', roles: ['admin'] },
+  { href: '/admin/nastaveni', label: 'Nastavení', roles: ['admin'] },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -161,19 +163,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </p>
           </div>
           <nav className="flex flex-col gap-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
-                  pathname === item.href
-                    ? 'bg-brand-primary text-black'
-                    : 'text-brand-dark hover:bg-gray-100'
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {navItems
+              .filter((item) => item.roles.includes(role ?? ''))
+              .map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+                    pathname === item.href
+                      ? 'bg-brand-primary text-black'
+                      : 'text-brand-dark hover:bg-gray-100'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
             <button
               type="button"
               onClick={signOut}

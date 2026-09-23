@@ -1,7 +1,7 @@
 # Active Context
 
 > Aktuální stav projektu, poslední změny a otevřené otázky.
-> Aktualizováno: 2026-09-22
+> Aktualizováno: 2026-09-23
 
 ## Projekt
 
@@ -12,7 +12,40 @@
 - Deploy: GitHub Pages (statický export) přes GitHub Actions
 - Repo: `masu11/bikegallery_pujcovna` → https://masu11.github.io/bikegallery_pujcovna
 
-## Poslední pracovní sezení (22. 9. 2026)
+## Poslední pracovní sezení (23. 9. 2026)
+
+Uživatel nahlásil 3 okruhy problémů, které jsme vyřešili:
+
+### 1. Role Pracovník vs. Administrátor (vysvětlení + UI)
+- **Pracovník (worker):** dle RLS může číst rezervace, měnit status rezervací a číst profily.
+  Nemůže spravovat kola, varianty, fotky, slevy, nastavení ani mazat rezervace.
+- **Administrátor (admin):** vše co pracovník + plná správa katalogu (kola, varianty, fotky),
+  slev, nastavení, profilů a mazání rezervací.
+- **UI:** `app/admin/layout.tsx` nyní skrývá položky menu (Kola, Slevy, Nastavení) pro pracovníky.
+
+### 2. Chyby při rezervaci (RLS + e-mail)
+- **RLS chyba "new row violates row-level security policy for table reservations":**
+  příčinou bylo `.insert().select().single()` – veřejnost nemá SELECT policy na `reservations`,
+  takže RETURNING selhal. Oprava: ID rezervace se generuje na klientovi (`crypto.randomUUID()`)
+  a vkládá se bez `.select()` (`app/rezervace/page.tsx`).
+- **E-mail "Unexpected token '<'":** na GitHub Pages (statický hosting) API route
+  `/api/send-email` neexistuje → server vrací HTML 404 → `res.json()` selhal.
+  Oprava: `lib/email.ts` kontroluje `content-type` (ne-JSON → srozumitelná hláška) a podporuje
+  produkční endpoint přes `NEXT_PUBLIC_SEND_EMAIL_URL` (Supabase Edge Function).
+- **Kalendář pro veřejnost:** veřejnost nemá SELECT na `reservations`, proto se kalendář
+  načítá přes novou security definer funkci `get_calendar_reservations()` (vrací jen termín,
+  status a variantu – bez osobních údajů). SQL je v `supabase/schema.sql`, je nutné ho spustit.
+
+### 3. Duplicitní varianty u kola (např. Cannondale Topstone 2)
+- **Příčina:** `app/admin/kola/page.tsx` mazal všechny varianty a znovu je vkládal.
+  `reservation_items.bike_variant_id` má FK bez `ON DELETE CASCADE` → smazání varianty
+  s rezervací selhalo (chyba se ignorovala) → staré varianty zůstaly + nové se vložily = duplicity.
+- **Oprava:** synchronizace variant – update existujících, insert nových, odebrané se smažou,
+  a pokud na ně odkazuje rezervace, skryjí se (`active = false`). Skryté varianty se
+  v administraci ani na webu nezobrazují.
+- **Poznámka:** stávající duplicity v DB je potřeba vyčistit SQL skriptem (viz progress.md).
+
+## Předchozí sezení (22. 9. 2026)
 
 Uživatel nahlásil 4 problémy, které jsme opravili:
 

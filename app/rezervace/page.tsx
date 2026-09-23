@@ -79,32 +79,41 @@ export default function ReservationPage() {
 
     const reservationNumber = `BG-${Date.now().toString(36).toUpperCase()}`
 
-    const { data: reservation, error: resError } = await supabase
-      .from('reservations')
-      .insert({
-        reservation_number: reservationNumber,
-        customer_name: form.name,
-        customer_email: form.email,
-        customer_phone: form.phone,
-        customer_address: form.address,
-        start_date: items[0].start_date,
-        end_date: items[0].end_date,
-        status: 'pending',
-        total_price: totals.total,
-        discount_amount: totals.seasonal + totals.multiDay,
-        notes: form.note || null,
-      })
-      .select()
-      .single()
+    // ID rezervace generujeme na klientovi, abychom nemuseli číst řádek zpět.
+    // Veřejnost nemá SELECT policy na tabulku reservations → .select() by skončilo
+    // chybou "new row violates row-level security policy".
+    const reservationId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            const r = (Math.random() * 16) | 0
+            const v = c === 'x' ? r : (r & 0x3) | 0x8
+            return v.toString(16)
+          })
 
-    if (resError || !reservation) {
-      setError(`Rezervaci se nepodařilo uložit: ${resError?.message ?? 'neznámá chyba'}`)
+    const { error: resError } = await supabase.from('reservations').insert({
+      id: reservationId,
+      reservation_number: reservationNumber,
+      customer_name: form.name,
+      customer_email: form.email,
+      customer_phone: form.phone,
+      customer_address: form.address,
+      start_date: items[0].start_date,
+      end_date: items[0].end_date,
+      status: 'pending',
+      total_price: totals.total,
+      discount_amount: totals.seasonal + totals.multiDay,
+      notes: form.note || null,
+    })
+
+    if (resError) {
+      setError(`Rezervaci se nepodařilo uložit: ${resError.message}`)
       setSubmitting(false)
       return
     }
 
     const itemsPayload = items.map((item) => ({
-      reservation_id: reservation.id,
+      reservation_id: reservationId,
       bike_variant_id: item.variant_id,
       bike_name: item.bike_name,
       variant_label: item.variant_label,
