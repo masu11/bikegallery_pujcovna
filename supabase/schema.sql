@@ -162,6 +162,131 @@ $$;
 
 grant execute on function public.get_calendar_reservations() to anon, authenticated;
 
+-- ---------- Ochrana proti překryvu termínů (duplicitní rezervace) ----------
+-- Trigger na reservation_items: při vložení/změně položky zkontroluje, že pro danou
+-- variantu kola neexistuje jiná AKTIVNÍ rezervace (pending/reserved/occupied)
+-- s překrývajícím se termínem. Statusy completed/cancelled neblokují.
+-- Funkce je security definer, aby mohla číst reservations i pro anonymního klienta.
+create or replace function public.prevent_overlapping_reservations()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_start date;
+  v_end date;
+  v_status text;
+begin
+  select r.start_date, r.end_date, r.status
+    into v_start, v_end, v_status
+    from public.reservations r
+   where r.id = new.reservation_id;
+
+  if v_status in ('pending', 'reserved', 'occupied') then
+    if exists (
+      select 1
+        from public.reservation_items ri
+        join public.reservations r on r.id = ri.reservation_id
+       where ri.bike_variant_id = new.bike_variant_id
+         and ri.id <> new.id
+         and r.status in ('pending', 'reserved', 'occupied')
+         and r.start_date <= v_end
+         and r.end_date >= v_start
+    ) then
+      raise exception 'Toto kolo (varianta) je v daném termínu již rezervované.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_prevent_overlap on public.reservation_items;
+create trigger trg_prevent_overlap
+  after insert or update on public.reservation_items
+  for each row execute function public.prevent_overlapping_reservations();
+
+-- ---------- Transakční vytvoření rezervace (veřejný formulář) ----------
+-- Vytvoří rezervaci + položky v JEDNÉ transakci. Před vložením zkontroluje
+-- překryv termínů (stejná logika jako trigger výše), takže při konfliktu
+-- v DB nezůstane osiřelá rezervace bez položek.
+create or replace function public.create_reservation(
+  p_reservation_number text,
+  p_customer_name text,
+  p_customer_email text,
+  p_customer_phone text,
+  p_customer_address text,
+  p_start_date date,
+  p_end_date date,
+  p_total_price numeric,
+  p_discount_amount numeric,
+  p_notes text,
+  p_items jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_reservation_id uuid;
+  v_item jsonb;
+  v_variant_id uuid;
+begin
+  if p_items is null or jsonb_array_length(p_items) = 0 then
+    raise exception 'Rezervace musí obsahovat alespoň jedno kolo.';
+  end if;
+
+  -- Kontrola překryvu termínů pro každou variantu v košíku
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    v_variant_id := (v_item->>'bike_variant_id')::uuid;
+    if exists (
+      select 1
+        from public.reservation_items ri
+        join public.reservations r on r.id = ri.reservation_id
+       where ri.bike_variant_id = v_variant_id
+         and r.status in ('pending', 'reserved', 'occupied')
+         and r.start_date <= p_end_date
+         and r.end_date >= p_start_date
+    ) then
+      raise exception 'Kolo je v tomto termínu již rezervované.';
+    end if;
+  end loop;
+
+  insert into public.reservations (
+    reservation_number, customer_name, customer_email, customer_phone,
+    customer_address, start_date, end_date, status, total_price, discount_amount, notes
+  ) values (
+    p_reservation_number, p_customer_name, p_customer_email, p_customer_phone,
+    p_customer_address, p_start_date, p_end_date, 'pending', p_total_price, p_discount_amount, p_notes
+  )
+  returning id into v_reservation_id;
+
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    insert into public.reservation_items (
+      reservation_id, bike_variant_id, bike_name, variant_label, price_per_day, days, subtotal
+    ) values (
+      v_reservation_id,
+      (v_item->>'bike_variant_id')::uuid,
+      v_item->>'bike_name',
+      v_item->>'variant_label',
+      (v_item->>'price_per_day')::numeric,
+      (v_item->>'days')::integer,
+      (v_item->>'subtotal')::numeric
+    );
+  end loop;
+
+  return jsonb_build_object('id', v_reservation_id, 'reservation_number', p_reservation_number);
+end;
+$$;
+
+grant execute on function public.create_reservation(
+  text, text, text, text, text, date, date, numeric, numeric, text, jsonb
+) to anon, authenticated;
+
 -- ---------- RLS: aktivace ----------
 alter table public.bikes enable row level security;
 alter table public.bike_variants enable row level security;

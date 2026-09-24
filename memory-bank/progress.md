@@ -1,7 +1,69 @@
 # Progress
 
 > Přehled hotové a plánované práce.
-> Aktualizováno: 2026-09-23
+> Aktualizováno: 2026-09-24
+
+## Poslední sezení (24. 9. 2026 – datum a čas vytvoření v přehledu rezervací) ✅
+
+- [x] **`app/admin/rezervace/page.tsx`:** v seznamu rezervací se za číslem rezervace zobrazuje datum a čas vytvoření (`created_at`, formát `cs-CZ`), poté jméno zákazníka
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [ ] **Uživatel:** restart dev serveru + hard refresh (Ctrl+F5) a zkontrolovat přehled rezervací
+
+## Poslední sezení (24. 9. 2026 – správa fotek u kol: mazání a pořadí) ✅
+
+- [x] **Diagnóza:** fotky u kol šlo jen přidávat (jeden stav `photoUrl`, vložení jedné hlavní fotky při uložení), neexistovalo mazání ani řazení
+- [x] **`app/admin/kola/page.tsx`:** kompletní správa fotek – seznam s náhledy, přidávání více fotek (URL + upload), mazání (z `photos` i ze Storage přes `storagePathFromUrl()`), řazení šipkami ↑/↓ (první fotka = hlavní, `sort_order` + `is_main` se přepíšou při uložení)
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [ ] **Uživatel:** restart dev serveru + hard refresh (Ctrl+F5) a otestovat mazání/řazení fotek
+
+## Poslední sezení (24. 9. 2026 – oprava kalendáře a duplicitních rezervací) ✅
+
+- [x] **Diagnóza:** kalendář neukazoval rezervace, protože chyba RPC `get_calendar_reservations()` se tiše ignorovala; duplicitní rezervace procházely, protože v DB nebyla ochrana proti překryvu termínů
+- [x] **`supabase/schema.sql`:** nový trigger `trg_prevent_overlap` (funkce `prevent_overlapping_reservations`) na `reservation_items` – blokuje překryv termínů pro variantu (pending/reserved/occupied)
+- [x] **`supabase/schema.sql`:** nová transakční funkce `create_reservation(...)` – rezervace + položky v jedné transakci, kontrola překryvu, žádné osiřelé rezervace
+- [x] **`app/rezervace/page.tsx`:** veřejný formulář volá `create_reservation` (RPC) místo dvou insertů
+- [x] **`app/admin/rezervace/page.tsx`:** úklid osiřelé rezervace při chybě vložení položek
+- [x] **`app/kolo/page.tsx`:** varování u kalendáře, když se nepodaří načíst rezervace (chyba RPC se neignoruje)
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [x] **Oprava chyby 42P13:** z definice `create_reservation(...)` odstraněny defaulty u `p_customer_address` a `p_notes` (PostgreSQL nepovoluje default před parametry bez defaultu) – nutné spustit CELÝ `supabase/schema.sql` znovu
+- [ ] **Uživatel:** spustit `supabase/schema.sql` v Supabase SQL Editoru (vytvoří funkce + trigger)
+- [ ] **Uživatel:** restart dev serveru + hard refresh (Ctrl+F5)
+- [ ] **Uživatel:** duplicitní rezervace v adminu označit jako Stornované (status `cancelled`)
+
+## Předchozí sezení (24. 9. 2026 – Edge Function nasazena) ✅
+
+- [x] **Edge Function `send-email` nasazena** na projekt `ihsiyynhvxhcyuqbjlrm` (Supabase CLI: login, link, secrets set, functions deploy)
+- [x] **Ověřeno:** Edge Function vrací HTTP 200 a e-mail se odeslal (s `apikey` hlavičkou); bez ní 401 `UNAUTHORIZED_NO_AUTH_HEADER`
+- [x] **Oprava `lib/email.ts`:** `postEmail()` posílá `apikey` hlavičku (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) – anon klíč je veřejný
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [ ] **Uživatel:** restart dev serveru + hard refresh (Ctrl+F5) a otestovat rezervaci
+- [ ] **Uživatel:** pro e-maily na jiné adresy ověřit doménu v Resend a změnit `RESEND_FROM`
+
+## Předchozí sezení (24. 9. 2026 – e-mail: skutečná příčina + fallback) ✅
+
+- [x] **Nalezena skutečná příčina:** Edge Function NENÍ nasazená → `NEXT_PUBLIC_SEND_EMAIL_URL` vrací HTTP 404 `NOT_FOUND` → „Failed to fetch"
+- [x] **Oprava `lib/email.ts`:** fallback na lokální API route při 404/síťové chybě Edge Function; retry (1× po 1,5 s) při přechodné síťové chybě; `extractError()` pro řetězec i objekt
+- [x] **Ověřeno:** lokální route posílá e-mail (HTTP 200, id vráceno); `npx tsc --noEmit` bez chyb
+- [x] **Odpověď:** Edge Functions fungují na free tieru Supabase; příklad s `auth: "user"` by nefungoval pro anonymní rezervační formulář (401) – naše funkce bez auth je správná
+- [ ] **Uživatel:** nainstalovat Supabase CLI + nasadit Edge Function (`supabase functions deploy send-email`) + nastavit secrets `RESEND_API_KEY`, `RESEND_FROM`
+- [ ] **Uživatel:** restart dev serveru + hard refresh (Ctrl+F5)
+
+## Předchozí sezení (24. 9. 2026 – lokální běh, e-mail + admin) ✅
+
+- [x] **Diagnóza e-mailu:** API route `/api/send-email` funguje (test Node fetch: HTTP 500 s reálnou odpovědí Resendu); „TypeError: Failed to fetch" byl přechodný (kompilace route v dev režimu)
+- [x] **Oprava:** `lib/email.ts` – default URL `/api/send-email/` (s lomítkem) kvůli `trailingSlash: true` a 308 přesměrování
+- [x] **Diagnóza adminu:** „Pro správu rezervací a kol se přihlaste." je přihlašovací formulář (očekávané chování), ne chyba
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [ ] **Uživatel:** testovat e-maily na adresu `marcel.suchomel@gmail.com` (Resend free plán doručuje jen na registrovaný e-mail); pro jiné adresy ověřit doménu v Resend a změnit `RESEND_FROM`
+- [ ] **Uživatel:** vytvořit uživatele v Supabase Auth + spustit `supabase/roles.sql` (role admin pro `marcel.suchomel@gmail.com`)
+
+## Předchozí sezení (24. 9. 2026 – nový PC, nastavení .env) ✅
+
+- [x] **Diagnóza:** po stažení z GitHubu chyběl `.env` (je v `.gitignore`, ř. 26) → aplikace hlásila „Supabase není nakonfigurován“
+- [x] **Vytvořen `.env`** ze šablony `.env.example` (placeholder hodnoty) – uživatel doplní reálné klíče
+- [x] Ověřeno: `node_modules` existuje (závislosti nainstalované)
+- [ ] **Uživatel:** doplnit do `.env` `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Supabase Dashboard → Project Settings → API) a restartovat `npm run dev`
+- [ ] **Uživatel:** pokud je Supabase projekt nový/prázdný, spustit v SQL Editoru `supabase/schema.sql`, `supabase/seed.sql`, `supabase/storage.sql`
 
 ## Hotovo ✅
 
@@ -99,7 +161,8 @@
 ## Na čem pracujeme / plánováno 🔜
 
 - [ ] **Spustit v Supabase SQL Editor:** `supabase/storage.sql` (bucket `bike-photos` + politiky) – jinak nahrávání lokálních fotek v administraci nefunguje
-- [ ] **Spustit v Supabase SQL Editor:** novou funkci `get_calendar_reservations()` (kód v `supabase/schema.sql`) – jinak kalendář pro veřejnost neukáže rezervace
+- [ ] **Spustit v Supabase SQL Editor:** celý `supabase/schema.sql` (funkce `get_calendar_reservations` + nový trigger `trg_prevent_overlap` + funkce `create_reservation`) – jinak kalendář neukáže rezervace a duplicity se neblokují
+- [ ] **Označit duplicitní rezervace v adminu jako Stornované** (status `cancelled`) – neblokují kalendář
 - [ ] **Vyčistit duplicitní varianty v DB** (např. Cannondale Topstone 2) – SQL skript níže
 - [ ] **Produkční e-maily:** nasadit Supabase Edge Function `send-email` a nastavit `NEXT_PUBLIC_SEND_EMAIL_URL` (GitHub Pages nepodporuje API route)
 - [ ] Ověření vlastní domény v Resend + změna `RESEND_FROM` (aby e-maily chodily na libovolné adresy)

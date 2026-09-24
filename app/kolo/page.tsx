@@ -21,6 +21,7 @@ function BikeDetailContent() {
   const [reservations, setReservations] = useState<CalendarReservation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [calendarWarning, setCalendarWarning] = useState<string | null>(null)
 
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [selectedStart, setSelectedStart] = useState<string | null>(null)
@@ -69,6 +70,17 @@ function BikeDetailContent() {
         // proto se používá security definer funkce get_calendar_reservations).
         supabase.rpc('get_calendar_reservations'),
       ])
+
+      if (reservationsRes.error) {
+        // Chyba RPC se dříve tiše ignorovala → kalendář vypadal prázdný, i když
+        // rezervace v DB byly. Nyní na to upozorníme uživatele.
+        console.error('Nepodařilo se načíst rezervace pro kalendář:', reservationsRes.error)
+        setCalendarWarning(
+          'Nepodařilo se načíst obsazenost kalendáře. Rezervace se nemusí zobrazovat správně – zkuste to prosím později.',
+        )
+      } else {
+        setCalendarWarning(null)
+      }
 
       setPhotos(photosRes.data ?? [])
       setVariants(variantsRes.data ?? [])
@@ -237,6 +249,11 @@ function BikeDetailContent() {
           {/* Kalendář */}
           <div className="mt-6 rounded-lg border border-gray-200 p-4">
             <p className="label">Vyberte termín půjčení</p>
+            {calendarWarning && (
+              <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                {calendarWarning}
+              </div>
+            )}
             <BikeCalendar
               reservations={variantReservations}
               selectedStart={selectedStart}

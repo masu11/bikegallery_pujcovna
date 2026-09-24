@@ -19,6 +19,23 @@ const emptyForm = {
   active: true,
 }
 
+// Vrátí cestu souboru v bucketu „bike-photos“ z veřejné URL (nebo null, pokud URL
+// do bucketu nepatří). Používá se při mazání souboru ze Storage.
+function storagePathFromUrl(url: string): string | null {
+  const marker = '/object/public/bike-photos/'
+  const idx = url.indexOf(marker)
+  if (idx === -1) return null
+  let path = url.slice(idx + marker.length)
+  const q = path.indexOf('?')
+  if (q !== -1) path = path.slice(0, q)
+  try {
+    path = decodeURIComponent(path)
+  } catch {
+    // neplatné URL kódování – necháme cestu jak je
+  }
+  return path
+}
+
 export default function AdminBikes() {
   const [bikes, setBikes] = useState<BikeFull[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,6 +43,8 @@ export default function AdminBikes() {
   const [isNew, setIsNew] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [variants, setVariants] = useState<{ id?: string; color: string; size: string }[]>([])
+  const [photos, setPhotos] = useState<BikePhoto[]>([])
+  const [deletedPhotos, setDeletedPhotos] = useState<BikePhoto[]>([])
   const [photoUrl, setPhotoUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -43,7 +62,9 @@ export default function AdminBikes() {
           ...b,
           // Skryté varianty (active = false) se v administraci nezobrazují
           variants: (b.bike_variants ?? []).filter((v: BikeVariant) => v.active),
-          photos: b.photos ?? [],
+          photos: (b.photos ?? []).sort(
+            (a: BikePhoto, b: BikePhoto) => a.sort_order - b.sort_order,
+          ),
         })) as BikeFull[],
       )
     }
@@ -59,6 +80,8 @@ export default function AdminBikes() {
     setEditing(null)
     setForm(emptyForm)
     setVariants([])
+    setPhotos([])
+    setDeletedPhotos([])
     setPhotoUrl('')
     setMessage(null)
   }
@@ -76,6 +99,8 @@ export default function AdminBikes() {
       active: bike.active,
     })
     setVariants(bike.variants.map((v) => ({ id: v.id, color: v.color, size: v.size })))
+    setPhotos(bike.photos.map((p) => ({ ...p })))
+    setDeletedPhotos([])
     setPhotoUrl('')
     setMessage(null)
   }
@@ -83,6 +108,78 @@ export default function AdminBikes() {
   function cancel() {
     setEditing(null)
     setIsNew(false)
+  }
+
+  // ---------- Fotky ----------
+
+  function addPhotoByUrl() {
+    const url = photoUrl.trim()
+    if (!url) {
+      setMessage('Zadejte URL fotky.')
+      return
+    }
+    setPhotos((prev) => [
+      ...prev,
+      {
+        id: '',
+        bike_id: '',
+        url,
+        alt: form.name,
+        is_main: false,
+        sort_order: prev.length,
+      },
+    ])
+    setPhotoUrl('')
+    setMessage(null)
+  }
+
+  async function uploadPhoto(file: File) {
+    // Bezpečný název souboru: bez diakritiky, mezer a speciálních znaků
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+    const base = file.name
+      .replace(/\.[^.]+$/, '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase()
+    const path = `bikes/${Date.now()}-${base || 'foto'}.${ext}`
+    const { error } = await supabase.storage
+      .from('bike-photos')
+      .upload(path, file, { contentType: file.type })
+    if (error) {
+      setMessage(`Nahrání selhalo: ${error.message}`)
+      return
+    }
+    const { data: urlData } = supabase.storage.from('bike-photos').getPublicUrl(path)
+    setPhotos((prev) => [
+      ...prev,
+      {
+        id: '',
+        bike_id: '',
+        url: urlData.publicUrl,
+        alt: form.name,
+        is_main: false,
+        sort_order: prev.length,
+      },
+    ])
+    setMessage('Fotka nahrána.')
+  }
+
+  function removePhoto(index: number) {
+    const p = photos[index]
+    if (!p) return
+    // Fotky, které už jsou v DB, se smažou při uložení (z tabulky i ze Storage)
+    if (p.id) setDeletedPhotos((d) => [...d, p])
+    setPhotos(photos.filter((_, i) => i !== index))
+  }
+
+  function movePhoto(index: number, dir: -1 | 1) {
+    const target = index + dir
+    if (target < 0 || target >= photos.length) return
+    const next = [...photos]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    setPhotos(next)
   }
 
   async function handleSave() {
@@ -184,21 +281,48 @@ export default function AdminBikes() {
         }
       }
 
-      // Fotka: pokud je URL, vložíme jako hlavní
-      if (photoUrl) {
-        const { error: photoError } = await supabase.from('photos').insert({
-          bike_id: bikeId,
-          url: photoUrl,
-          alt: form.name,
-          is_main: true,
-          sort_order: 0,
-        })
-        if (photoError) {
-          setMessage(`Kolo uloženo, ale fotku se nepodařilo uložit: ${photoError.message}`)
-          setSaving(false)
-          cancel()
-          load()
-          return
+      // Fotky: synchronizace
+      // 1) Smazat fotky odstraněné v tomto sezení (z tabulky photos i ze Storage)
+      for (const p of deletedPhotos) {
+        if (p.id) {
+          await supabase.from('photos').delete().eq('id', p.id)
+        }
+        const storagePath = storagePathFromUrl(p.url)
+        if (storagePath) {
+          await supabase.storage.from('bike-photos').remove([storagePath])
+        }
+      }
+
+      // 2) Uložit pořadí a hlavní fotku (první v seznamu = hlavní)
+      const sorted = photos.map((p, i) => ({ ...p, sort_order: i, is_main: i === 0 }))
+      for (const p of sorted) {
+        if (p.id) {
+          const { error } = await supabase
+            .from('photos')
+            .update({ sort_order: p.sort_order, is_main: p.is_main, alt: p.alt })
+            .eq('id', p.id)
+          if (error) {
+            setMessage(`Fotky se nepodařilo uložit: ${error.message}`)
+            setSaving(false)
+            cancel()
+            load()
+            return
+          }
+        } else {
+          const { error } = await supabase.from('photos').insert({
+            bike_id: bikeId,
+            url: p.url,
+            alt: p.alt,
+            is_main: p.is_main,
+            sort_order: p.sort_order,
+          })
+          if (error) {
+            setMessage(`Fotky se nepodařilo uložit: ${error.message}`)
+            setSaving(false)
+            cancel()
+            load()
+            return
+          }
         }
       }
     }
@@ -345,59 +469,87 @@ export default function AdminBikes() {
             </div>
 
             <div className="card p-6">
-              <h2 className="text-lg font-bold text-brand-dark">Fotka</h2>
+              <h2 className="text-lg font-bold text-brand-dark">Fotky</h2>
               <p className="mt-1 text-xs text-gray-500">
-                Vložte URL fotky (např. z bikegallery.cz) nebo nahrajte soubor.
+                První fotka v seznamu je hlavní. Pořadí měníte šipkami, fotku smažete křížkem.
               </p>
               <p className="mt-1 text-xs text-gray-400">
-                Nahrávání souborů vyžaduje bucket „bike-photos“ v Supabase Storage –
-                spusťte SQL z <code>supabase/storage.sql</code>.
+                Nahrávání souborů vyžaduje bucket „bike-photos“ v Supabase Storage – spusťte SQL z{' '}
+                <code>supabase/storage.sql</code>.
               </p>
+
+              {photos.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {photos.map((p, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 rounded-md border border-gray-200 p-2"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={p.url}
+                        alt={p.alt || 'Fotka kola'}
+                        className="h-16 w-20 shrink-0 rounded object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs text-gray-500">{p.url}</p>
+                        {i === 0 && (
+                          <span className="text-xs font-semibold text-brand-secondary">Hlavní</span>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => movePhoto(i, -1)}
+                          disabled={i === 0}
+                          className="rounded border border-gray-300 px-2 py-1 text-xs font-bold text-brand-dark hover:bg-gray-50 disabled:opacity-30"
+                          title="Posunout nahoru"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => movePhoto(i, 1)}
+                          disabled={i === photos.length - 1}
+                          className="rounded border border-gray-300 px-2 py-1 text-xs font-bold text-brand-dark hover:bg-gray-50 disabled:opacity-30"
+                          title="Posunout dolů"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(i)}
+                          className="rounded border border-red-200 px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50"
+                          title="Smazat fotku"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <input
-                className="input mt-3"
+                className="input mt-4"
                 placeholder="https://…/fotka.jpg"
                 value={photoUrl}
                 onChange={(e) => setPhotoUrl(e.target.value)}
               />
+              <button type="button" onClick={addPhotoByUrl} className="btn-outline mt-2 w-full">
+                + Přidat fotku z URL
+              </button>
+
               <input
                 type="file"
                 accept="image/*"
                 className="mt-3 block w-full text-sm text-gray-600"
-                onChange={async (e) => {
+                onChange={(e) => {
                   const file = e.target.files?.[0]
-                  if (!file) return
-                  // Bezpečný název souboru: bez diakritiky, mezer a speciálních znaků
-                  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-                  const base = file.name
-                    .replace(/\.[^.]+$/, '')
-                    .normalize('NFD')
-                    .replace(/[\u0300-\u036f]/g, '')
-                    .replace(/[^a-zA-Z0-9]+/g, '-')
-                    .replace(/^-+|-+$/g, '')
-                    .toLowerCase()
-                  const path = `bikes/${Date.now()}-${base || 'foto'}.${ext}`
-                  const { error } = await supabase.storage
-                    .from('bike-photos')
-                    .upload(path, file, { contentType: file.type })
-                  if (error) {
-                    setMessage(`Nahrání selhalo: ${error.message}`)
-                    return
-                  }
-                  const { data: urlData } = supabase.storage
-                    .from('bike-photos')
-                    .getPublicUrl(path)
-                  setPhotoUrl(urlData.publicUrl)
-                  setMessage('Fotka nahrána.')
+                  if (file) uploadPhoto(file)
+                  e.target.value = '' // umožní nahrát stejný soubor znovu
                 }}
               />
-              {photoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={photoUrl}
-                  alt="Náhled"
-                  className="mt-3 aspect-[4/3] w-full rounded object-cover"
-                />
-              )}
             </div>
           </div>
         </div>

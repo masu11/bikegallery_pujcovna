@@ -1,11 +1,23 @@
 # Active Context
 
 > Aktuální stav projektu, poslední změny a otevřené otázky.
-> Aktualizováno: 2026-09-23
+> Aktualizováno: 2026-09-24
 
 ## Pravidlo komunikace
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
+
+## Poslední pracovní sezení (24. 9. 2026 – datum a čas vytvoření v přehledu rezervací)
+
+### Požadavek uživatele
+- V admin přehledu rezervací chce vždy vidět datum a čas vytvoření hned za číslem rezervace.
+
+### Změna
+- **`app/admin/rezervace/page.tsx`:** v seznamu rezervací se za číslem rezervace zobrazuje
+  `created_at` ve formátu `cs-CZ` (datum + čas), poté jméno zákazníka.
+
+### Ověření
+- `npx tsc --noEmit` bez chyb.
 
 ## Projekt
 
@@ -16,7 +28,177 @@
 - Deploy: GitHub Pages (statický export) přes GitHub Actions
 - Repo: `masu11/bikegallery_pujcovna` → https://masu11.github.io/bikegallery_pujcovna
 
-## Poslední pracovní sezení (23. 9. 2026, noc – 3. úkol, follow-up)
+## Poslední pracovní sezení (24. 9. 2026 – správa fotek u kol: mazání a pořadí)
+
+### Hlášení uživatele
+- Fotky u kol se dají přidávat, ale ne mazat ani měnit pořadí.
+
+### Příčina
+- `app/admin/kola/page.tsx` měl jen jeden stav `photoUrl` – při uložení se vložila JEDNA fotka
+  jako hlavní (`is_main: true, sort_order: 0`). Stávající fotky se v editačním formuláři
+  nezobrazovaly, neexistovalo mazání ani řazení.
+
+### Oprava
+- **`app/admin/kola/page.tsx`:** kompletní správa fotek v editačním formuláři:
+  - seznam stávajících fotek s náhledy (řazené podle `sort_order`),
+  - přidávání více fotek (URL i upload do Storage `bike-photos`),
+  - mazání fotek – při uložení se smaže záznam z `photos` i soubor ze Storage
+    (pomocná funkce `storagePathFromUrl()`),
+  - změna pořadí šipkami ↑/↓ – při uložení se přepíše `sort_order` a `is_main`
+    (první fotka v seznamu = hlavní),
+  - synchronizace fotek probíhá při uložení (stejně jako u variant), funguje i pro nová kola.
+
+### Ověření
+- `npx tsc --noEmit` bez chyb.
+
+### Důležité pro uživatele
+- Restart dev serveru + hard refresh (Ctrl+F5).
+- Mazání souborů ze Storage vyžaduje politiku `bike_photos_admin_delete` (je v `supabase/storage.sql`).
+
+## Poslední pracovní sezení (24. 9. 2026 – oprava kalendáře a duplicitních rezervací)
+
+### Hlášení uživatele
+- Na GitHubu (předevčírem) po rezervaci byla rezervace vidět v kalendáři, ale nešlo udělat další.
+- Dnes na localhost:3000 kalendář neukazuje ŽÁDNOU rezervaci (žádný stav) a podařilo se vytvořit
+  dvě stejné rezervace na více kolech.
+
+### Příčiny
+1. **Kalendář prázdný:** kalendář čte rezervace přes RPC funkci `get_calendar_reservations()`
+   (security definer v `supabase/schema.sql`). Chyba RPC se v `app/kolo/page.tsx` tiše ignorovala
+   (`reservationsRes.error` se nekontroloval) → kalendář vypadal prázdný, i když rezervace v DB byly.
+   Pravděpodobně na novém PC `.env` ukazuje na Supabase projekt, kde schéma (a tedy tato funkce)
+   nebylo spuštěno.
+2. **Duplicitní rezervace:** v DB nebyla ŽÁDNÁ ochrana proti překryvu termínů (RLS insert
+   `with check (true)`). Blokování bylo jen klientské (kalendář) → když kalendář nefungoval,
+   duplicity prošly.
+
+### Opravy
+- **`supabase/schema.sql`:**
+  - Nový trigger `trg_prevent_overlap` + funkce `prevent_overlapping_reservations()` na
+    `reservation_items` – při vložení/změně položky zkontroluje překryv termínů pro danou variantu
+    (statusy pending/reserved/occupied blokují, completed/cancelled ne). Autoritativní ochrana
+    pro VŠECHNY toky (veřejný formulář i admin).
+  - Nová transakční funkce `create_reservation(...)` – vytvoří rezervaci + položky v JEDNÉ transakci
+    s kontrolou překryvu; při konfliktu v DB nezůstane osiřelá rezervace bez položek.
+- **`app/rezervace/page.tsx`:** veřejný formulář nyní volá `create_reservation` (RPC) místo dvou
+  samostatných insertů; přátelská chyba, když funkce v DB chybí.
+- **`app/admin/rezervace/page.tsx`:** při chybě vložení položek se smaže osiřelá rezervace.
+- **`app/kolo/page.tsx`:** chyba RPC `get_calendar_reservations` se už neignoruje – zobrazí se
+  varování u kalendáře a chyba se vypíše do konzole.
+
+### Ověření
+- `npx tsc --noEmit` bez chyb.
+
+### Follow-up (oprava chyby 42P13 při spuštění schema.sql)
+- Uživatel při spuštění `supabase/schema.sql` dostal `ERROR: 42P13: input parameters after one
+  with a default value must also have defaults`.
+- **Příčina:** v definici `create_reservation(...)` měly parametry `p_customer_address text default ''`
+  a `p_notes text default null` default, ale následující parametry už ne. PostgreSQL to nepovoluje.
+- **Oprava:** z definice funkce odstraněny defaulty (klient posílá všechny parametry vždy).
+- **Důsledek:** při chybě se nespustil zbytek souboru (RLS aktivace, politiky, trigger
+  `handle_new_user`, settings, discounts) → je nutné spustit CELÝ `supabase/schema.sql` znovu.
+
+### Důležité pro uživatele
+1. **Spustit `supabase/schema.sql` v Supabase SQL Editoru** (celý soubor) – vytvoří/aktualizuje
+   `get_calendar_reservations()`, nový trigger a funkci `create_reservation`. Bez toho kalendář
+   zůstane prázdný a duplicity se nepodaří blokovat.
+2. Restart dev serveru + hard refresh (Ctrl+F5).
+3. Duplicitní rezervace v adminu označit jako **Stornované** (status `cancelled`) – neblokují
+   kalendář ani nové rezervace.
+
+## Předchozí pracovní sezení (24. 9. 2026 – Edge Function nasazena a funguje)
+
+### Hotovo
+- **Edge Function `send-email` nasazena** na projekt `ihsiyynhvxhcyuqbjlrm`
+  (Supabase CLI: login → link → secrets set RESEND_API_KEY + RESEND_FROM → functions deploy).
+- **Ověřeno:** volání Edge Function s `apikey` hlavičkou vrací HTTP 200
+  `{"ok":true,"id":"..."}` – e-mail se odeslal na `marcel.suchomel@gmail.com`.
+- **Poznámka:** Edge Function má defaultně zapnutou kontrolu JWT → bez `apikey`
+  hlavičky vrací 401 `UNAUTHORIZED_NO_AUTH_HEADER`. Anon klíč je veřejný.
+- **Oprava `lib/email.ts`:** `postEmail()` nyní posílá `apikey` hlavičku
+  (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) u všech volání (lokální route ji ignoruje).
+- Ověřeno: `npx tsc --noEmit` bez chyb.
+
+### Důležité pro uživatele
+- Restartovat dev server + hard refresh (Ctrl+F5), aby se projevila změna v `lib/email.ts`.
+- E-maily na free plánu Resendu chodí jen na `marcel.suchomel@gmail.com`;
+  pro jiné adresy ověřit doménu v Resend a změnit `RESEND_FROM`.
+
+## Předchozí pracovní sezení (24. 9. 2026 – e-mail: nalezena skutečná příčina)
+
+### Skutečná příčina „TypeError: Failed to fetch"
+- Uživatel nastavil `NEXT_PUBLIC_SEND_EMAIL_URL` na Edge Function URL
+  (`https://ihsiyynhvxhcyuqbjlrm.supabase.co/functions/v1/send-email`),
+  ale **Edge Function NENÍ nasazená** → Supabase vrací HTTP 404
+  `{"code":"NOT_FOUND","message":"Requested function was not found"}`.
+- Lokální API route `/api/send-email/` funguje (test: HTTP 200, e-mail odeslán na
+  `marcel.suchomel@gmail.com` – Resend free plán doručuje jen na registrovaný e-mail).
+
+### Oprava (lib/email.ts)
+- **Fallback:** pokud Edge Function vrátí 404 (nenasazená) nebo síťovou chybu,
+  aplikace automaticky zkusí lokální API route `/api/send-email/`.
+- **Retry:** bez `NEXT_PUBLIC_SEND_EMAIL_URL` se lokální route při přechodné
+  síťové chybě (kompilace v dev režimu) zkusí ještě jednou po 1,5 s.
+- **Lepší výpis chyb:** `extractError()` zvládá řetězec i objekt (Edge Function
+  vrací `{ error: { message } }`).
+- Ověřeno: `npx tsc --noEmit` bez chyb.
+
+### Odpověď na dotaz uživatele (příklad funkce s `withSupabase({ auth: "user" })`)
+- Edge Functions **fungují na free tieru** Supabase (kvóta ~500K volání/měsíc).
+- Příklad s `auth: "user"` by ale **nefungoval pro veřejný rezervační formulář** –
+  vyžaduje přihlášeného uživatele (JWT), anonymní návštěvník by dostal 401.
+- Naše stávající funkce `supabase/functions/send-email/index.ts` je správná:
+  bez auth (veřejná), CORS, `RESEND_FROM` z env, ošetření chyb.
+- Omezení free tieru je na straně **Resendu** (onboarding@resend.dev doručuje jen
+  na registrovaný e-mail), ne na straně Supabase.
+
+### Další kroky pro uživatele
+1. Nainstalovat Supabase CLI (na PC není) – Scoop/Chocolatey/binárka.
+2. `supabase login`, `supabase link --project-ref ihsiyynhvxhcyuqbjlrm`
+3. `supabase secrets set RESEND_API_KEY=... RESEND_FROM="Rezervace <onboarding@resend.dev>"`
+4. `supabase functions deploy send-email`
+5. Restart dev serveru + hard refresh (Ctrl+F5).
+
+## Předchozí pracovní sezení (24. 9. 2026 – lokální běh, chyby e-mailu a admin přihlášení)
+
+Uživatel zprovoznil aplikaci lokálně (Supabase funguje – rezervace BG-MUF24BRA se uložila),
+ale hlásil 2 problémy:
+
+### 1. E-mail: „TypeError: Failed to fetch"
+- **Diagnóza:** API route `/api/send-email` funguje (test přes Node fetch: HTTP 500 s reálnou
+  odpovědí Resendu). „Failed to fetch" byl přechodný – Next.js v dev režimu kompiluje route
+  až při prvním požadavku; při odeslání během kompilace se spojení přeruší.
+- **Skutečný problém:** Resend free plán (`onboarding@resend.dev`) doručuje e-maily POUZE na
+  e-mail registrovaný v Resend účtu (`marcel.suchomel@gmail.com`). Na jiné adresy e-maily nechodí.
+- **Oprava:** `lib/email.ts` – default URL změněna z `/api/send-email` na `/api/send-email/`
+  (kvůli `trailingSlash: true` vracel Next.js 308 přesměrování; někteří klienti 308 pro POST nesledují).
+- Ověřeno: `npx tsc --noEmit` bez chyb.
+
+### 2. Administrace: „Pro správu rezervací a kol se přihlaste."
+- **Není to chyba** – je to přihlašovací formulář (očekávané chování).
+- Uživatel musí: vytvořit uživatele v Supabase Auth (Authentication → Users → Add user),
+  trigger `handle_new_user` automaticky vytvoří profil s rolí `worker`, pak spustit
+  `supabase/roles.sql` (nastaví `role = 'admin'` pro `marcel.suchomel@gmail.com`).
+
+## Předchozí pracovní sezení (24. 9. 2026 – nový PC, nastavení .env)
+
+Uživatel pokračuje na jiném PC po stažení z GitHubu a neměl soubor `.env`
+(je v `.gitignore`, takže se do repozitáře neukládá – to je očekávané).
+Aplikace hlásila: „Supabase není nakonfigurován. Nastavte klíče v .env.“
+
+### Co bylo uděláno
+- **Vytvořen `.env`** ze šablony `.env.example` (stejná struktura, placeholder hodnoty).
+- Ověřeno: `node_modules` na PC existuje (závislosti nainstalované), `.env` chyběl → nyní vytvořen.
+
+### Co musí udělat uživatel
+1. Do `.env` doplnit reálné klíče ze Supabase Dashboardu
+   (Project Settings → API): `NEXT_PUBLIC_SUPABASE_URL` a `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. Restartovat dev server (`npm run dev`) – Next.js čte `.env` při startu.
+3. Pokud je Supabase projekt nový/prázdný, spustit v SQL Editoru:
+   `supabase/schema.sql`, `supabase/seed.sql`, `supabase/storage.sql`
+   (jinak nebude v DB žádná data kol).
+
+## Předchozí pracovní sezení (23. 9. 2026, noc – 3. úkol, follow-up)
 
 Uživatel poslal raw e-mail: PNG data URI **byl** v e-mailu, ale **Gmail blokuje `data:` URI
 v obrázcích** → QR se nezobrazil. **Oprava:** QR PNG se nyní **uloží do Supabase Storage**

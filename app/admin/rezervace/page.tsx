@@ -184,6 +184,8 @@ export default function AdminReservations() {
     })
 
     if (itemsError) {
+      // Smažeme osiřelou rezervaci (bez položek), aby v DB nezůstala
+      await supabase.from('reservations').delete().eq('id', reservation.id)
       setFormError(`Rezervaci se nepodařilo uložit: ${itemsError.message}`)
       setCreating(false)
       return
@@ -489,7 +491,8 @@ export default function AdminReservations() {
               <div className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div>
                   <p className="font-bold text-brand-dark">
-                    {r.reservation_number} · {r.customer_name}
+                    {r.reservation_number} · {new Date(r.created_at).toLocaleString('cs-CZ')} ·{' '}
+                    {r.customer_name}
                   </p>
                   <p className="text-sm text-gray-600">
                     {r.start_date} → {r.end_date} · {formatPrice(r.total_price)}

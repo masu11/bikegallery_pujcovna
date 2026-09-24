@@ -8,18 +8,43 @@
  *   https://VAS_PROJECT_REF.supabase.co/functions/v1/send-email
  */
 
-const API_URL =
-  process.env.NEXT_PUBLIC_SEND_EMAIL_URL || '/api/send-email'
+// Pozor: next.config.mjs má trailingSlash: true → Next.js přesměrovává
+// /api/send-email na /api/send-email/ (HTTP 308). Voláme rovnou s lomítkem,
+// aby odpadlo přesměrování (někteří klienti 308 pro POST nesledují).
+const LOCAL_API_URL = '/api/send-email/'
 
-export async function sendEmail(params: {
-  to: string
-  subject: string
-  html: string
-}): Promise<{ ok: boolean; error?: string }> {
+/** Získá text chyby z odpovědi (řetězec nebo objekt). */
+function extractError(data: unknown, fallback: string): string {
+  if (typeof data === 'string') return data
+  if (data && typeof data === 'object') {
+    const obj = data as Record<string, unknown>
+    if (typeof obj.error === 'string') return obj.error
+    if (obj.error && typeof obj.error === 'object') {
+      const errObj = obj.error as Record<string, unknown>
+      if (typeof errObj.message === 'string') return errObj.message
+      return JSON.stringify(errObj)
+    }
+    if (typeof obj.message === 'string') return obj.message
+  }
+  return fallback
+}
+
+/** Odešle e-mail na danou URL. Vrací ok, error a příznaky 404 / síťové chyby. */
+async function postEmail(
+  url: string,
+  params: { to: string; subject: string; html: string },
+): Promise<{ ok: boolean; error?: string; notFound?: boolean; networkError?: boolean }> {
   try {
-    const res = await fetch(API_URL, {
+    // Supabase Edge Function má defaultně zapnutou kontrolu JWT – stačí poslat
+    // apikey hlavičku s anon klíčem (ten je veřejný, je součástí client bundle).
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      headers['apikey'] = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    }
+
+    const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(params),
     })
 
@@ -34,12 +59,59 @@ export async function sendEmail(params: {
 
     const data = await res.json()
     if (!res.ok) {
-      return { ok: false, error: data?.error ?? 'Chyba odeslání e-mailu.' }
+      return {
+        ok: false,
+        error: extractError(data, `Chyba odeslání e-mailu (HTTP ${res.status}).`),
+        notFound: res.status === 404,
+      }
     }
     return { ok: true }
   } catch (err) {
-    return { ok: false, error: String(err) }
+    return { ok: false, error: String(err), networkError: true }
   }
+}
+
+/**
+ * Odeslání e-mailu přes Resend.
+ *
+ * Cíl odeslání:
+ * - Pokud je nastaveno NEXT_PUBLIC_SEND_EMAIL_URL → Supabase Edge Function
+ *   (funguje ze všech prostředí: localhost, GitHub Pages, finální hosting).
+ *   Pokud funkce není nasazená (404) nebo dojde k síťové chybě, spadneme
+ *   na lokální API route /api/send-email/ (funguje na dev serveru).
+ * - Bez NEXT_PUBLIC_SEND_EMAIL_URL → lokální API route s jedním opakováním
+ *   při přechodné síťové chybě (Next.js v dev režimu kompiluje route až při
+ *   prvním požadavku a spojení se může přerušit).
+ */
+export async function sendEmail(params: {
+  to: string
+  subject: string
+  html: string
+}): Promise<{ ok: boolean; error?: string }> {
+  const primaryUrl = process.env.NEXT_PUBLIC_SEND_EMAIL_URL
+
+  if (primaryUrl) {
+    const result = await postEmail(primaryUrl, params)
+    if (result.ok) return result
+
+    // Fallback na lokální API route jen při 404 (funkce nenasazená) nebo
+    // síťové chybě. Reálné chyby (např. Resend free plán) se vrací rovnou.
+    if (result.notFound || result.networkError) {
+      const fallback = await postEmail(LOCAL_API_URL, params)
+      if (fallback.ok) return fallback
+      return {
+        ok: false,
+        error: `Edge Function: ${result.error}. Lokální route: ${fallback.error}`,
+      }
+    }
+    return result
+  }
+
+  // Lokální API route s jedním opakováním při přechodné síťové chybě.
+  const first = await postEmail(LOCAL_API_URL, params)
+  if (first.ok || !first.networkError) return first
+  await new Promise((r) => setTimeout(r, 1500))
+  return postEmail(LOCAL_API_URL, params)
 }
 
 /** Řádky tabulky kol pro e-mailové šablony. */

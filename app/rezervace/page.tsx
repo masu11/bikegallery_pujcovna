@@ -79,53 +79,35 @@ export default function ReservationPage() {
 
     const reservationNumber = `BG-${Date.now().toString(36).toUpperCase()}`
 
-    // ID rezervace generujeme na klientovi, abychom nemuseli číst řádek zpět.
-    // Veřejnost nemá SELECT policy na tabulku reservations → .select() by skončilo
-    // chybou "new row violates row-level security policy".
-    const reservationId =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-            const r = (Math.random() * 16) | 0
-            const v = c === 'x' ? r : (r & 0x3) | 0x8
-            return v.toString(16)
-          })
-
-    const { error: resError } = await supabase.from('reservations').insert({
-      id: reservationId,
-      reservation_number: reservationNumber,
-      customer_name: form.name,
-      customer_email: form.email,
-      customer_phone: form.phone,
-      customer_address: form.address,
-      start_date: items[0].start_date,
-      end_date: items[0].end_date,
-      status: 'pending',
-      total_price: totals.total,
-      discount_amount: totals.seasonal + totals.multiDay,
-      notes: form.note || null,
+    // Rezervace + položky se vytvoří v JEDNÉ transakci přes funkci create_reservation
+    // (security definer v Supabase). Funkce zkontroluje překryv termínů a při konfliktu
+    // vrátí chybu – v DB pak nezůstane osiřelá rezervace bez položek.
+    const { error: createError } = await supabase.rpc('create_reservation', {
+      p_reservation_number: reservationNumber,
+      p_customer_name: form.name,
+      p_customer_email: form.email,
+      p_customer_phone: form.phone,
+      p_customer_address: form.address,
+      p_start_date: items[0].start_date,
+      p_end_date: items[0].end_date,
+      p_total_price: totals.total,
+      p_discount_amount: totals.seasonal + totals.multiDay,
+      p_notes: form.note || null,
+      p_items: items.map((item) => ({
+        bike_variant_id: item.variant_id,
+        bike_name: item.bike_name,
+        variant_label: item.variant_label,
+        price_per_day: item.price_per_day,
+        days: item.days,
+        subtotal: item.price_per_day * item.days,
+      })),
     })
 
-    if (resError) {
-      setError(`Rezervaci se nepodařilo uložit: ${resError.message}`)
-      setSubmitting(false)
-      return
-    }
-
-    const itemsPayload = items.map((item) => ({
-      reservation_id: reservationId,
-      bike_variant_id: item.variant_id,
-      bike_name: item.bike_name,
-      variant_label: item.variant_label,
-      price_per_day: item.price_per_day,
-      days: item.days,
-      subtotal: item.price_per_day * item.days,
-    }))
-
-    const { error: itemsError } = await supabase.from('reservation_items').insert(itemsPayload)
-
-    if (itemsError) {
-      setError(`Rezervaci se nepodařilo uložit: ${itemsError.message}`)
+    if (createError) {
+      const msg = createError.message.includes('create_reservation')
+        ? 'Systém není plně nastaven (chybí databázová funkce). Spusťte prosím supabase/schema.sql v Supabase SQL Editoru.'
+        : createError.message
+      setError(`Rezervaci se nepodařilo uložit: ${msg}`)
       setSubmitting(false)
       return
     }
