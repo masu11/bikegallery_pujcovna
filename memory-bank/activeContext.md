@@ -7,6 +7,91 @@
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
 
+## Poslední pracovní sezení (24. 9. 2026 – oprava bezpečnostních nálezů před LIVE) ✅
+
+### Požadavek uživatele
+- Ověřit a opravit nálezy z bezpečnostní analýzy (zapsané v activeContext.md/progress.md):
+  2 kritické (manipulace s cenou, veřejná e-mailová funkce) + ideálně rate limiting a escapování e-mailů.
+
+### Ověření nálezů (vše potvrzené v kódu)
+1. **VYSOKÉ – manipulace s cenou:** `create_reservation` (security definer) přebíral
+   `p_total_price`, `p_discount_amount` a `price_per_day`/`subtotal` od klienta bez kontroly.
+2. **VYSOKÉ – veřejná Edge Function `send-email`:** CORS `*`, bez auth – kdokoli mohl posílat e-maily.
+3. **STŘEDNÍ – HTML injekce:** e-mailové šablony vkládaly uživatelská data bez escapování.
+4. **STŘEDNÍ – chybějící rate limiting:** rezervace a e-maily bez omezení.
+5. **STŘEDNÍ – RLS insert `with check (true)`:** kdokoli mohl vložit rezervaci se statusem `reserved`/`occupied`.
+
+### Opravy
+- **`supabase/schema.sql`:**
+  - `create_reservation` nyní IGNORUJE ceny od klienta a počítá je na serveru z DB
+    (`bikes.base_price_per_day` + aktivní slevy z `discounts`) – stejná logika jako `lib/pricing.ts`.
+    Nové pomocné funkce `seasonal_discount_pct()` a `multi_day_discount_pct()`.
+  - Validace vstupů: termín (start ≤ end), jméno, telefon, formát e-mailu.
+  - Rate limiting: max 5 rezervací / hodinu z jedné e-mailové adresy.
+  - RLS: `reservations_public_insert` → `to anon with check (status = 'pending')`;
+    nová `reservations_worker_insert` (authenticated + is_worker) pro ruční vytvoření v adminu;
+    `items_public_insert` → `to anon with check (reservation_is_pending(reservation_id))`
+    (nová security definer funkce); nová `items_worker_insert`.
+- **`supabase/functions/send-email/index.ts`:** vyžaduje hlavičku `x-send-email-secret`
+  (env `SEND_EMAIL_SECRET`), rate limiting v paměti (per IP 20/hod, per příjemce 5/hod),
+  validace e-mailu a délky subject/html.
+- **`app/api/send-email/route.ts`:** stejná ochrana (tajný klíč + rate limit + validace).
+- **`lib/email.ts`:** nová `escapeHtml()` – všechna uživatelská data v šablonách se escapují;
+  `postEmail()` posílá hlavičku `x-send-email-secret` (`NEXT_PUBLIC_SEND_EMAIL_SECRET`).
+- **`.env.example`:** dokumentace `NEXT_PUBLIC_SEND_EMAIL_SECRET` + `SEND_EMAIL_SECRET`.
+- **`.github/workflows/deploy.yml`:** do buildu přidán `NEXT_PUBLIC_SEND_EMAIL_SECRET`.
+
+### Ověření
+- `npx tsc --noEmit` bez chyb, `npm run build` úspěšné (17 stránek).
+
+### Důležité pro uživatele (nutné kroky)
+1. **Supabase:** spustit CELÝ `supabase/schema.sql` v SQL Editoru (nové funkce + RLS politiky).
+2. **Edge Function:** `supabase secrets set SEND_EMAIL_SECRET=<dlouhý náhodný řetězec>`
+   a `supabase functions deploy send-email` (nová verze s kontrolou klíče).
+3. **Lokálně:** do `.env` přidat `SEND_EMAIL_SECRET` a `NEXT_PUBLIC_SEND_EMAIL_SECRET`
+   (stejná hodnota) a restartovat dev server.
+4. **GitHub:** přidat secret `NEXT_PUBLIC_SEND_EMAIL_SECRET` (stejná hodnota)
+   → commit + push na `main`.
+
+## Poslední pracovní sezení (24. 9. 2026 – hosting, údržba, free plány, bezpečnostní analýza)
+
+### Požadavek uživatele
+- 4 otázky: (1) minimální požadavky na webhosting, (2) co aktualizovat/udržovat pro bezpečnost,
+  (3) udržitelnost free plánů (Supabase, Resend) v LIVE, (4) bezpečnostní test
+  https://masu11.github.io/bikegallery_pujcovna/.
+
+### Odpovědi (shrnutí)
+1. **Webhosting:** aplikace je statický export Next.js → stačí statický hosting s HTTPS
+   (GitHub Pages, Netlify, Vercel free). Pro server-side (API route) je potřeba Node.js 18+
+   (Vercel/Netlify) – klasický PHP hosting nestačí.
+2. **Údržba/bezpečnost:** aktualizace závislostí (npm audit, Dependabot), 2FA na GitHubu,
+   rotace klíčů, kontrola RLS, zálohy DB, bezpečnostní hlavičky (CSP/HSTS – GitHub Pages je
+   neumí nastavit), rate limiting.
+3. **Free plány:** pro malý provoz udržitelné, ALE: Resend `onboarding@resend.dev` doručuje
+   jen na registrovaný e-mail → nutná verifikace vlastní domény; Supabase free projekt se
+   po 7 dnech nečinnosti pozastaví; sledovat kvóty (Resend 100/den, 3000/měsíc).
+4. **Bezpečnostní test:** live test nešel spustit (Ask mode bez execute_command) → provedena
+   statická analýza kódu (viz níže).
+
+### Nálezy statické bezpečnostní analýzy
+- **VYSOKÉ – manipulace s cenou:** RPC `create_reservation` (security definer) přijímá
+  `p_total_price`, `p_discount_amount` a `p_items` (price_per_day, subtotal) přímo od klienta
+  bez kontroly proti cenám v DB → útočník může rezervovat kolo za 1 Kč/den.
+- **VYSOKÉ – veřejné odesílání e-mailů:** Edge Function `send-email` je veřejná (CORS `*`,
+  bez auth; `apikey` s anon klíčem nic nechrání) → kdokoli může posílat e-maily přes účet
+  Resend (spam, vyčerpání kvóty).
+- **STŘEDNÍ – HTML injekce do e-mailů:** `confirmationEmailHtml`/`qrEmailHtml` vkládají
+  uživatelská data (jméno atd.) do HTML bez escapování.
+- **STŘEDNÍ – chybějící rate limiting:** rezervace, e-maily i přihlášení bez omezení.
+- **STŘEDNÍ – RLS insert `with check (true)`:** kdokoli může vložit rezervaci se statusem
+  `reserved`/`occupied` (obejití toku pending → admin potvrzení).
+- **OK:** RLS čtení jen aktivních položek, `get_calendar_reservations` vrací jen omezené
+  sloupce, trigger `trg_prevent_overlap`, storage politiky (čtení veřejné, zápis admin),
+  `.env` v .gitignore, RESEND_API_KEY jen na serveru, GitHub Actions secrets.
+
+### Ověření
+- Žádné změny kódu – pouze analýza a dokumentace.
+
 ## Poslední pracovní sezení (24. 9. 2026 – uživatelský manuál)
 
 ### Požadavek uživatele

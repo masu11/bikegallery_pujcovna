@@ -31,6 +31,9 @@ jobs:
           # URL Supabase Edge Function pro e-maily (statický hosting nemá API route).
           # Hodnota: https://VAS_PROJECT_REF.supabase.co/functions/v1/send-email
           NEXT_PUBLIC_SEND_EMAIL_URL: ${{ secrets.NEXT_PUBLIC_SEND_EMAIL_URL }}
+          # Tajný klíč pro e-maily (kontroluje ho Edge Function / API route).
+          # Hodnota: stejná jako SEND_EMAIL_SECRET v Supabase secrets.
+          NEXT_PUBLIC_SEND_EMAIL_SECRET: ${{ secrets.NEXT_PUBLIC_SEND_EMAIL_SECRET }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./out

@@ -6,6 +6,11 @@
  * - Produkce (GitHub Pages = statický hosting): API route NEexistuje, proto se použije
  *   Supabase Edge Function. Nastavte NEXT_PUBLIC_SEND_EMAIL_URL na adresu funkce:
  *   https://VAS_PROJECT_REF.supabase.co/functions/v1/send-email
+ *
+ * BEZPEČNOST:
+ * - Všechna uživatelská data se před vložením do HTML escapují (prevence HTML injekce).
+ * - Odesílání vyžaduje hlavičku x-send-email-secret (NEXT_PUBLIC_SEND_EMAIL_SECRET),
+ *   kterou kontroluje API route i Edge Function (SEND_EMAIL_SECRET).
  */
 
 // Pozor: next.config.mjs má trailingSlash: true → Next.js přesměrovává
@@ -29,6 +34,16 @@ function extractError(data: unknown, fallback: string): string {
   return fallback
 }
 
+/** Escapuje text pro bezpečné vložení do HTML (prevence HTML injekce). */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 /** Odešle e-mail na danou URL. Vrací ok, error a příznaky 404 / síťové chyby. */
 async function postEmail(
   url: string,
@@ -37,9 +52,14 @@ async function postEmail(
   try {
     // Supabase Edge Function má defaultně zapnutou kontrolu JWT – stačí poslat
     // apikey hlavičku s anon klíčem (ten je veřejný, je součástí client bundle).
+    // Hlavička x-send-email-secret chrání odesílání před zneužitím (kontroluje
+    // ji API route i Edge Function).
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       headers['apikey'] = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    }
+    if (process.env.NEXT_PUBLIC_SEND_EMAIL_SECRET) {
+      headers['x-send-email-secret'] = process.env.NEXT_PUBLIC_SEND_EMAIL_SECRET
     }
 
     const res = await fetch(url, {
@@ -114,7 +134,7 @@ export async function sendEmail(params: {
   return postEmail(LOCAL_API_URL, params)
 }
 
-/** Řádky tabulky kol pro e-mailové šablony. */
+/** Řádky tabulky kol pro e-mailové šablony (escapované). */
 function itemsRowsHtml(
   items: { bikeName: string; variantLabel: string; days: number; pricePerDay: string; subtotal: string }[],
 ): string {
@@ -122,11 +142,11 @@ function itemsRowsHtml(
     .map(
       (it) => `
     <tr>
-      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.bikeName}</td>
-      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.variantLabel}</td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${escapeHtml(it.bikeName)}</td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${escapeHtml(it.variantLabel)}</td>
       <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.days} dní</td>
-      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.pricePerDay}</td>
-      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${it.subtotal}</td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${escapeHtml(it.pricePerDay)}</td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">${escapeHtml(it.subtotal)}</td>
     </tr>`,
     )
     .join('')
@@ -144,11 +164,11 @@ export function confirmationEmailHtml(params: {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #383838;">Děkujeme za rezervaci!</h2>
-      <p>Dobrý den, ${params.name},</p>
-      <p>Váš požadavek na rezervaci <strong>${params.reservationNumber}</strong> jsme přijali.</p>
+      <p>Dobrý den, ${escapeHtml(params.name)},</p>
+      <p>Váš požadavek na rezervaci <strong>${escapeHtml(params.reservationNumber)}</strong> jsme přijali.</p>
       <table style="border-collapse: collapse; margin: 16px 0;">
-        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Termín:</td><td style="padding: 4px 0; font-weight: bold;">${params.startDate} → ${params.endDate}</td></tr>
-        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Cena:</td><td style="padding: 4px 0; font-weight: bold;">${params.totalPrice}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Termín:</td><td style="padding: 4px 0; font-weight: bold;">${escapeHtml(params.startDate)} → ${escapeHtml(params.endDate)}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Cena:</td><td style="padding: 4px 0; font-weight: bold;">${escapeHtml(params.totalPrice)}</td></tr>
       </table>
       <h3 style="color: #383838;">Kola</h3>
       <table style="border-collapse: collapse; width: 100%;">
@@ -183,12 +203,12 @@ export function qrEmailHtml(params: {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #383838;">Rezervace potvrzena</h2>
-      <p>Dobrý den, ${params.name},</p>
-      <p>Vaše rezervace <strong>${params.reservationNumber}</strong> byla potvrzena.</p>
+      <p>Dobrý den, ${escapeHtml(params.name)},</p>
+      <p>Vaše rezervace <strong>${escapeHtml(params.reservationNumber)}</strong> byla potvrzena.</p>
       <table style="border-collapse: collapse; margin: 16px 0;">
-        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Termín:</td><td style="padding: 4px 0; font-weight: bold;">${params.startDate} → ${params.endDate}</td></tr>
-        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Cena:</td><td style="padding: 4px 0; font-weight: bold;">${params.totalPrice}</td></tr>
-        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Příjemce:</td><td style="padding: 4px 0;">${params.bankBeneficiary}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Termín:</td><td style="padding: 4px 0; font-weight: bold;">${escapeHtml(params.startDate)} → ${escapeHtml(params.endDate)}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Cena:</td><td style="padding: 4px 0; font-weight: bold;">${escapeHtml(params.totalPrice)}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Příjemce:</td><td style="padding: 4px 0;">${escapeHtml(params.bankBeneficiary)}</td></tr>
       </table>
       <h3 style="color: #383838;">Kola</h3>
       <table style="border-collapse: collapse; width: 100%;">
@@ -205,7 +225,7 @@ export function qrEmailHtml(params: {
       </table>
       <p>Pro zaplacení naskenujte QR kód bankovní aplikací:</p>
       <div style="margin: 16px 0;">
-        <img src="${params.qrUrl}" alt="QR kód na platbu" width="200" height="200" style="display:block; width:200px; height:200px;" />
+        <img src="${escapeHtml(params.qrUrl)}" alt="QR kód na platbu" width="200" height="200" style="display:block; width:200px; height:200px;" />
       </div>
       <p>Po připsání platby je termín definitivně obsazený.</p>
       <p style="color: #999; font-size: 12px;">Bike Gallery Půjčovna</p>

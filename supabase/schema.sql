@@ -207,10 +207,49 @@ create trigger trg_prevent_overlap
   after insert or update on public.reservation_items
   for each row execute function public.prevent_overlapping_reservations();
 
+-- ---------- Pomocné funkce pro výpočet slev (serverová validace cen) ----------
+-- Sezónní sleva (%) pro dnešní datum (stejná logika jako lib/pricing.ts).
+create or replace function public.seasonal_discount_pct()
+returns numeric
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce(sum(d.value), 0)
+  from public.discounts d
+  where d.type = 'seasonal'
+    and d.active
+    and (d.start_date is null or d.start_date <= current_date)
+    and (d.end_date is null or d.end_date >= current_date)
+$$;
+
+-- Množstevní sleva (%) pro daný počet dní – nejvyšší min_days, který platí
+-- (stejná logika jako lib/pricing.ts: řazení podle min_days desc, první).
+create or replace function public.multi_day_discount_pct(p_days integer)
+returns numeric
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce(d.value, 0)
+  from public.discounts d
+  where d.type = 'multi_day'
+    and d.active
+    and d.min_days is not null
+    and p_days >= d.min_days
+  order by d.min_days desc
+  limit 1
+$$;
+
 -- ---------- Transakční vytvoření rezervace (veřejný formulář) ----------
 -- Vytvoří rezervaci + položky v JEDNÉ transakci. Před vložením zkontroluje
 -- překryv termínů (stejná logika jako trigger výše), takže při konfliktu
 -- v DB nezůstane osiřelá rezervace bez položek.
+--
+-- BEZPEČNOST: ceny (p_total_price, p_discount_amount, price_per_day, subtotal)
+-- se od klienta NEpřebírají – počítají se na serveru z aktuálních cen v DB
+-- (bikes.base_price_per_day) a aktivních slev (discounts). Klient tak nemůže
+-- rezervovat kolo za upravenou cenu.
 create or replace function public.create_reservation(
   p_reservation_number text,
   p_customer_name text,
@@ -219,8 +258,8 @@ create or replace function public.create_reservation(
   p_customer_address text,
   p_start_date date,
   p_end_date date,
-  p_total_price numeric,
-  p_discount_amount numeric,
+  p_total_price numeric,      -- IGNOROVÁNO – cena se počítá na serveru
+  p_discount_amount numeric,  -- IGNOROVÁNO – sleva se počítá na serveru
   p_notes text,
   p_items jsonb
 )
@@ -233,10 +272,48 @@ declare
   v_reservation_id uuid;
   v_item jsonb;
   v_variant_id uuid;
+  v_base_per_day numeric;
+  v_bike_name text;
+  v_color text;
+  v_size text;
+  v_days integer;
+  v_seasonal_pct numeric;
+  v_multi_pct numeric;
+  v_base_total numeric;
+  v_after_seasonal numeric;
+  v_item_total numeric;
+  v_seasonal_disc numeric;
+  v_multi_disc numeric;
+  v_total_price numeric := 0;
+  v_discount_amount numeric := 0;
 begin
+  -- Základní validace vstupů
   if p_items is null or jsonb_array_length(p_items) = 0 then
     raise exception 'Rezervace musí obsahovat alespoň jedno kolo.';
   end if;
+  if p_start_date > p_end_date then
+    raise exception 'Neplatný termín rezervace.';
+  end if;
+  if p_customer_name is null or trim(p_customer_name) = '' then
+    raise exception 'Chybí jméno zákazníka.';
+  end if;
+  if p_customer_phone is null or trim(p_customer_phone) = '' then
+    raise exception 'Chybí telefon zákazníka.';
+  end if;
+  if p_customer_email is null or p_customer_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    raise exception 'Neplatný e-mail zákazníka.';
+  end if;
+
+  -- Rate limiting: max 5 rezervací za hodinu z jedné e-mailové adresy
+  if (select count(*) from public.reservations r
+      where r.customer_email = p_customer_email
+        and r.created_at > now() - interval '1 hour') >= 5 then
+    raise exception 'Příliš mnoho rezervací z jedné e-mailové adresy. Zkuste to prosím později.';
+  end if;
+
+  v_days := (p_end_date - p_start_date) + 1;
+  v_seasonal_pct := public.seasonal_discount_pct();
+  v_multi_pct := public.multi_day_discount_pct(v_days);
 
   -- Kontrola překryvu termínů pro každou variantu v košíku
   for v_item in select * from jsonb_array_elements(p_items)
@@ -260,24 +337,55 @@ begin
     customer_address, start_date, end_date, status, total_price, discount_amount, notes
   ) values (
     p_reservation_number, p_customer_name, p_customer_email, p_customer_phone,
-    p_customer_address, p_start_date, p_end_date, 'pending', p_total_price, p_discount_amount, p_notes
+    p_customer_address, p_start_date, p_end_date, 'pending', 0, 0, p_notes
   )
   returning id into v_reservation_id;
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
+    v_variant_id := (v_item->>'bike_variant_id')::uuid;
+
+    -- Ověření varianty + načtení SKUTEČNÉ ceny z DB (ne z klienta!)
+    select b.base_price_per_day, b.name, bv.color, bv.size
+      into v_base_per_day, v_bike_name, v_color, v_size
+      from public.bike_variants bv
+      join public.bikes b on b.id = bv.bike_id
+     where bv.id = v_variant_id
+       and bv.active
+       and b.active;
+
+    if not found then
+      raise exception 'Vybrané kolo (varianta) není dostupné.';
+    end if;
+
+    -- Výpočet ceny (stejná logika jako lib/pricing.ts):
+    -- cena = (cena/den × dny × (1 − sezónní/100)) × (1 − množstevní/100)
+    v_base_total := v_base_per_day * v_days;
+    v_after_seasonal := v_base_total * (1 - v_seasonal_pct / 100);
+    v_item_total := round(v_after_seasonal * (1 - v_multi_pct / 100));
+    v_seasonal_disc := round(v_base_total * (v_seasonal_pct / 100));
+    v_multi_disc := round(v_after_seasonal * (v_multi_pct / 100));
+
+    v_total_price := v_total_price + v_item_total;
+    v_discount_amount := v_discount_amount + v_seasonal_disc + v_multi_disc;
+
     insert into public.reservation_items (
       reservation_id, bike_variant_id, bike_name, variant_label, price_per_day, days, subtotal
     ) values (
       v_reservation_id,
-      (v_item->>'bike_variant_id')::uuid,
-      v_item->>'bike_name',
-      v_item->>'variant_label',
-      (v_item->>'price_per_day')::numeric,
-      (v_item->>'days')::integer,
-      (v_item->>'subtotal')::numeric
+      v_variant_id,
+      v_bike_name,
+      trim(v_color || ' / ' || v_size),
+      v_base_per_day,
+      v_days,
+      v_base_total
     );
   end loop;
+
+  update public.reservations
+     set total_price = v_total_price,
+         discount_amount = v_discount_amount
+   where id = v_reservation_id;
 
   return jsonb_build_object('id', v_reservation_id, 'reservation_number', p_reservation_number);
 end;
@@ -334,10 +442,16 @@ create policy "discounts_admin_all" on public.discounts
   for all using (public.is_admin());
 
 -- ---------- RLS: reservations ----------
--- Klient může vytvořit rezervaci (bez přihlašování)
+-- Veřejnost (anon) může vytvořit rezervaci JEN ve statusu 'pending' –
+-- statusy reserved/occupied může nastavit pouze pracovník/admin.
 drop policy if exists "reservations_public_insert" on public.reservations;
 create policy "reservations_public_insert" on public.reservations
-  for insert with check (true);
+  for insert to anon with check (status = 'pending');
+
+-- Pracovník/admin: ruční vytvoření rezervace s libovolným statusem
+drop policy if exists "reservations_worker_insert" on public.reservations;
+create policy "reservations_worker_insert" on public.reservations
+  for insert to authenticated with check (public.is_worker());
 
 -- Pracovník a admin: čtení a změna statusu rezervací
 drop policy if exists "reservations_worker_select" on public.reservations;
@@ -354,9 +468,29 @@ create policy "reservations_admin_delete" on public.reservations
   for delete using (public.is_admin());
 
 -- ---------- RLS: reservation_items ----------
+-- Pomocná funkce pro RLS: je rezervace ve statusu 'pending'?
+-- (security definer, aby dotaz na reservations nepodléhal RLS a nezpůsobil rekurzi)
+create or replace function public.reservation_is_pending(p_reservation_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.reservations r
+    where r.id = p_reservation_id and r.status = 'pending'
+  )
+$$;
+
+-- Veřejnost (anon): položku může vložit jen k rezervaci ve statusu 'pending'
 drop policy if exists "items_public_insert" on public.reservation_items;
 create policy "items_public_insert" on public.reservation_items
-  for insert with check (true);
+  for insert to anon with check (public.reservation_is_pending(reservation_id));
+
+-- Pracovník/admin: položky k libovolné rezervaci (ruční vytvoření)
+drop policy if exists "items_worker_insert" on public.reservation_items;
+create policy "items_worker_insert" on public.reservation_items
+  for insert to authenticated with check (public.is_worker());
 
 drop policy if exists "items_worker_select" on public.reservation_items;
 create policy "items_worker_select" on public.reservation_items

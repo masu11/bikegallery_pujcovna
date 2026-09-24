@@ -3,6 +3,42 @@
 > Přehled hotové a plánované práce.
 > Aktualizováno: 2026-09-24
 
+## Poslední sezení (24. 9. 2026 – oprava bezpečnostních nálezů před LIVE) ✅
+
+- [x] **Ověřeny všechny nálezy** z bezpečnostní analýzy (2× VYSOKÉ, 3× STŘEDNÍ) – potvrzené v kódu
+- [x] **VYSOKÉ – manipulace s cenou opravena:** `create_reservation` počítá ceny na serveru z DB
+      (`bikes.base_price_per_day` + slevy z `discounts`), ceny od klienta se ignorují;
+      nové funkce `seasonal_discount_pct()`, `multi_day_discount_pct()`
+- [x] **VYSOKÉ – veřejná Edge Function opravena:** `send-email` vyžaduje `x-send-email-secret`
+      (env `SEND_EMAIL_SECRET`), rate limit (per IP + per příjemce), validace e-mailu/délky
+- [x] **STŘEDNÍ – HTML injekce opravena:** `lib/email.ts` – nová `escapeHtml()`,
+      všechna uživatelská data v šablonách escapovaná
+- [x] **STŘEDNÍ – rate limiting přidán:** rezervace (max 5/hod/e-mail v `create_reservation`),
+      e-maily (Edge Function + API route)
+- [x] **STŘEDNÍ – RLS insert zpřísněn:** `reservations_public_insert` → `to anon with check (status = 'pending')`;
+      `items_public_insert` → `to anon with check (reservation_is_pending(...))`;
+      nové worker insert politiky pro admin ruční vytvoření
+- [x] **Konfigurace:** `.env.example` + `.github/workflows/deploy.yml` – `NEXT_PUBLIC_SEND_EMAIL_SECRET` / `SEND_EMAIL_SECRET`
+- [x] Ověření: `npx tsc --noEmit` bez chyb, `npm run build` OK (17 stránek)
+- [ ] **Uživatel:** spustit CELÝ `supabase/schema.sql` v Supabase SQL Editoru
+- [ ] **Uživatel:** `supabase secrets set SEND_EMAIL_SECRET=...` + `supabase functions deploy send-email`
+- [ ] **Uživatel:** do `.env` přidat `SEND_EMAIL_SECRET` + `NEXT_PUBLIC_SEND_EMAIL_SECRET` (stejná hodnota), restart dev serveru
+- [ ] **Uživatel:** GitHub secret `NEXT_PUBLIC_SEND_EMAIL_SECRET` + commit/push na `main`
+
+## Poslední sezení (24. 9. 2026 – hosting, údržba, free plány, bezpečnostní analýza) ✅
+
+- [x] **Odpovězeno:** minimální požadavky na webhosting (statický export → statický hosting s HTTPS; server-side vyžaduje Node.js 18+ / Vercel / Netlify)
+- [x] **Odpovězeno:** co aktualizovat/udržovat pro bezpečnost (závislosti, 2FA, rotace klíčů, RLS, zálohy, hlavičky, rate limiting)
+- [x] **Odpovězeno:** udržitelnost free plánů v LIVE (Supabase + Resend ano pro malý provoz, ale nutná verifikace domény v Resend a pozor na 7denní pauzu Supabase free projektu)
+- [x] **Statická bezpečnostní analýza kódu** (live test nešel – Ask mode bez execute_command):
+  - [x] Nalezeno VYSOKÉ riziko: manipulace s cenou přes RPC `create_reservation` (ceny od klienta bez kontroly proti DB)
+  - [x] Nalezeno VYSOKÉ riziko: veřejná Edge Function `send-email` (kdokoli může posílat e-maily přes Resend)
+  - [x] Nalezeno STŘEDNÍ riziko: HTML injekce do e-mailových šablon (neescapovaná uživatelská data)
+  - [x] Nalezeno STŘEDNÍ riziko: chybějící rate limiting (rezervace, e-maily, přihlášení)
+  - [x] Nalezeno STŘEDNÍ riziko: RLS insert `with check (true)` umožňuje vložit rezervaci se statusem `reserved`/`occupied`
+  - [x] Ověřeno OK: RLS čtení jen aktivních položek, `get_calendar_reservations` (omezené sloupce), trigger `trg_prevent_overlap`, storage politiky, `.env` v .gitignore, secrets v GitHub Actions
+- [x] **Doporučeno (plán) – OPRAVENO v sezení „oprava bezpečnostních nálezů před LIVE":** manipulace s cenou (serverová validace v `create_reservation`), omezení veřejné Edge Function (tajný klíč + rate limit), escapování dat v e-mailových šablonách, rate limiting, zpřísnění RLS insert (status vždy `pending`)
+
 ## Poslední sezení (24. 9. 2026 – uživatelský manuál) ✅
 
 - [x] **Nový soubor `docs/manual.md`** – uživatelský manuál v češtině pro část **zákazník**

@@ -5,8 +5,35 @@ import { NextRequest, NextResponse } from 'next/server'
  * Klíč RESEND_API_KEY žije pouze na serveru (v .env), nikdy se neposílá do browseru.
  *
  * POST /api/send-email
+ * Headers: { "x-send-email-secret": "<SEND_EMAIL_SECRET>" }
  * { "to": "zakaznik@email.cz", "subject": "...", "html": "..." }
+ *
+ * BEZPEČNOST: route vyžaduje hlavičku x-send-email-secret shodnou s env proměnnou
+ * SEND_EMAIL_SECRET a má jednoduchý rate limit v paměti (per IP + per příjemce).
  */
+
+// Jednoduchý rate limit v paměti (klouzavé okno) – per instance serveru.
+const RATE_LIMIT = {
+  perRecipient: { max: 5, windowMs: 60 * 60 * 1000 }, // 5 e-mailů / hod / příjemce
+  perIp: { max: 20, windowMs: 60 * 60 * 1000 }, // 20 e-mailů / hod / IP
+}
+const hits = new Map<string, number[]>()
+
+function isRateLimited(key: string, max: number, windowMs: number): boolean {
+  const now = Date.now()
+  const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs)
+  if (recent.length >= max) {
+    hits.set(key, recent)
+    return true
+  }
+  recent.push(now)
+  hits.set(key, recent)
+  return false
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+}
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.RESEND_API_KEY
@@ -14,11 +41,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'RESEND_API_KEY is not set' }, { status: 500 })
   }
 
+  // Ochrana: tajný klíč v hlavičce
+  const secret = process.env.SEND_EMAIL_SECRET
+  if (!secret || req.headers.get('x-send-email-secret') !== secret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Rate limiting podle IP
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  if (isRateLimited(`ip:${ip}`, RATE_LIMIT.perIp.max, RATE_LIMIT.perIp.windowMs)) {
+    return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 })
+  }
+
   try {
     const { to, subject, html } = await req.json()
 
     if (!to || !subject || !html) {
       return NextResponse.json({ error: 'Missing to, subject or html' }, { status: 400 })
+    }
+    if (typeof to !== 'string' || !isValidEmail(to)) {
+      return NextResponse.json({ error: 'Invalid recipient email' }, { status: 400 })
+    }
+    if (typeof subject !== 'string' || subject.length > 200) {
+      return NextResponse.json({ error: 'Subject too long' }, { status: 400 })
+    }
+    if (typeof html !== 'string' || html.length > 100_000) {
+      return NextResponse.json({ error: 'HTML too long' }, { status: 400 })
+    }
+
+    // Rate limiting podle příjemce
+    if (
+      isRateLimited(
+        `to:${to.toLowerCase()}`,
+        RATE_LIMIT.perRecipient.max,
+        RATE_LIMIT.perRecipient.windowMs,
+      )
+    ) {
+      return NextResponse.json(
+        { error: 'Too many emails to this address. Try again later.' },
+        { status: 429 },
+      )
     }
 
     const from = process.env.RESEND_FROM || 'Rezervace <onboarding@resend.dev>'
