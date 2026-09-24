@@ -74,10 +74,23 @@ export default function ReservationPage() {
       setError('Systém není nakonfigurován (chybí Supabase).')
       return
     }
+    // Ochrana před starou/poškozenou datou v košíku (localStorage) – ceny a dny
+    // musí být platné čísla, jinak by se do DB poslal null/NaN.
+    if (items.some((it) => !Number.isFinite(it.price_per_day) || !Number.isFinite(it.days))) {
+      setError('Košík obsahuje neplatné údaje. Odeberte kolo a přidejte ho znovu.')
+      return
+    }
 
     setSubmitting(true)
 
     const reservationNumber = `BG-${Date.now().toString(36).toUpperCase()}`
+
+    // Ceny se posílají vždy jako čísla (nikdy null/NaN). Aktuální funkce v DB je
+    // ignoruje a počítá cenu na serveru, ale starší verze by mohla vložit null.
+    const totalPrice = Number.isFinite(totals.total) ? totals.total : 0
+    const discountAmount = Number.isFinite(totals.seasonal + totals.multiDay)
+      ? totals.seasonal + totals.multiDay
+      : 0
 
     // Rezervace + položky se vytvoří v JEDNÉ transakci přes funkci create_reservation
     // (security definer v Supabase). Funkce zkontroluje překryv termínů a při konfliktu
@@ -90,8 +103,8 @@ export default function ReservationPage() {
       p_customer_address: form.address,
       p_start_date: items[0].start_date,
       p_end_date: items[0].end_date,
-      p_total_price: totals.total,
-      p_discount_amount: totals.seasonal + totals.multiDay,
+      p_total_price: totalPrice,
+      p_discount_amount: discountAmount,
       p_notes: form.note || null,
       p_items: items.map((item) => ({
         bike_variant_id: item.variant_id,

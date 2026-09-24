@@ -3,6 +3,21 @@
 > Přehled hotové a plánované práce.
 > Aktualizováno: 2026-09-24
 
+## Poslední sezení (24. 9. 2026 – chyba „null value in column total_price" na GitHubu) ✅
+
+- [x] **Diagnóza:** veřejný formulář na GitHub Pages vrací `null value in column "total_price"` –
+      nasazený kód je aktuální (RPC `create_reservation`), RPC v produkční DB funguje (HTTP 200,
+      i s `p_total_price: null`); chyba nastává, když do DB se posílá `total_price = null`/`NaN`
+      (stará/poškozená data v košíku localStorage nebo starší verze funkce v DB)
+- [x] **`app/rezervace/page.tsx`:** kontrola platnosti košíka (`Number.isFinite`), `p_total_price`/
+      `p_discount_amount` se posílají vždy jako čísla (fallback `0`)
+- [x] **`app/admin/rezervace/page.tsx`:** `total_price`/`discount_amount` při ručním vytvoření
+      se posílají vždy jako čísla (fallback `0`)
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [ ] **Uživatel:** spustit CELÝ `supabase/schema.sql` v Supabase SQL Editoru (aktualizuje
+      `create_reservation` – cena se počítá na serveru, `total_price = 0` nikdy `null`)
+- [ ] **Uživatel:** commit + push na `main` + hard refresh (Ctrl+F5) na GitHub Pages
+
 ## Poslední sezení (24. 9. 2026 – oprava bezpečnostních nálezů před LIVE) ✅
 
 - [x] **Ověřeny všechny nálezy** z bezpečnostní analýzy (2× VYSOKÉ, 3× STŘEDNÍ) – potvrzené v kódu

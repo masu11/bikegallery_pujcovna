@@ -149,6 +149,13 @@ export default function AdminReservations() {
     const days = calcDays(form.startDate, form.endDate)
     const price = calcPrice(selectedBike.base_price_per_day, days, discounts)
 
+    // Ceny se posílají vždy jako čísla (nikdy null/NaN), aby se neprojevila
+    // chyba „null value in column total_price".
+    const totalPrice = Number.isFinite(price.total) ? price.total : 0
+    const discountAmount = Number.isFinite(price.seasonal_discount + price.multi_day_discount)
+      ? price.seasonal_discount + price.multi_day_discount
+      : 0
+
     const { data: reservation, error: resError } = await supabase
       .from('reservations')
       .insert({
@@ -160,8 +167,8 @@ export default function AdminReservations() {
         start_date: form.startDate,
         end_date: form.endDate,
         status: form.status,
-        total_price: price.total,
-        discount_amount: price.seasonal_discount + price.multi_day_discount,
+        total_price: totalPrice,
+        discount_amount: discountAmount,
         notes: form.notes || null,
       })
       .select()

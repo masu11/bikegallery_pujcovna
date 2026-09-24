@@ -7,6 +7,35 @@
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
 
+## Poslední pracovní sezení (24. 9. 2026 – chyba „null value in column total_price" na GitHubu) ✅
+
+### Hlášení uživatele
+- Lokálně rezervace funguje, ale na GitHub Pages veřejný formulář `/rezervace` vrací:
+  `Rezervaci se nepodařilo uložit: null value in column "total_price" of relation "reservations" violates not-null constraint`.
+
+### Diagnostika (ověřeno přes REST API produkční DB)
+- Nasazený kód na GitHub Pages je aktuální (veřejný formulář volá RPC `create_reservation`).
+- RPC `create_reservation` v produkční DB **funguje** (HTTP 200, i s `p_total_price: null` –
+  aktuální verze funkce cenu počítá na serveru a vkládá `total_price = 0`).
+- Všechna kola mají platné `base_price_per_day`.
+- **Závěr:** chyba nastává, když do DB se posílá `total_price = null`/`NaN` (např. stará/poškozená
+  data v košíku localStorage, nebo starší verze funkce v DB, která vkládala `p_total_price` od klienta).
+
+### Opravy (zpevnění kódu)
+- **`app/rezervace/page.tsx`:** kontrola platnosti košíka (`Number.isFinite` na `price_per_day`/`days`);
+  `p_total_price` a `p_discount_amount` se posílají vždy jako čísla (fallback `0`).
+- **`app/admin/rezervace/page.tsx`:** `total_price` a `discount_amount` při ručním vytvoření
+  se posílají vždy jako čísla (fallback `0`).
+
+### Ověření
+- `npx tsc --noEmit` bez chyb.
+
+### Důležité pro uživatele (nutné kroky)
+1. **Supabase:** spustit CELÝ `supabase/schema.sql` v SQL Editoru (aktualizuje `create_reservation`
+   na verziu, která cenu počítá na serveru a vkládá `total_price = 0` – nikdy `null`).
+2. Commit + push na `main` → GitHub Actions nasadí nový build.
+3. Hard refresh (Ctrl+F5) na GitHub Pages, aby se nevykonával starý JS.
+
 ## Poslední pracovní sezení (24. 9. 2026 – oprava bezpečnostních nálezů před LIVE) ✅
 
 ### Požadavek uživatele
