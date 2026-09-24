@@ -3,6 +3,15 @@
 > Přehled hotové a plánované práce.
 > Aktualizováno: 2026-09-24
 
+## Poslední sezení (24. 9. 2026 – uživatelský manuál) ✅
+
+- [x] **Nový soubor `docs/manual.md`** – uživatelský manuál v češtině pro část **zákazník**
+      (galerie, detail kola, kalendář, rezervace, platba) a **administrátor** (přihlášení,
+      role, přehled, rezervace, kola, slevy, nastavení) + tabulka statusů a důležité poznámky
+- [x] Manuál vychází z reálného chování kódu (stránky `app/`, `components/BikeCalendar.tsx`,
+      `lib/pricing.ts`, `lib/qr.ts`)
+- [x] Žádné změny kódu – pouze dokumentace
+
 ## Poslední sezení (24. 9. 2026 – e-mail na GitHub Pages: HTTP 405) ✅
 
 - [x] **Diagnóza:** po deploy na GitHub Pages e-mail nešel (HTTP 405, HTML místo JSON) – `NEXT_PUBLIC_SEND_EMAIL_URL` chyběl v `.github/workflows/deploy.yml`, takže build na GitHub Pages neobsahoval URL Edge Function a `lib/email.ts` volal neexistující API route `/api/send-email/`

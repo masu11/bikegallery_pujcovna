@@ -7,6 +7,27 @@
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
 
+## Poslední pracovní sezení (24. 9. 2026 – uživatelský manuál)
+
+### Požadavek uživatele
+- Sepsat manuál k části **zákazník** a **administrátor**.
+
+### Změna
+- **Nový soubor `docs/manual.md`** – kompletní uživatelský manuál v češtině:
+  - **Část pro zákazníka:** úvodní stránka a galerie, detail kola, kalendář (pravidla
+    víkendů/svátků, barvy dnů, výběr termínu), rezervační formulář (povinná pole, GDPR),
+    co se děje po odeslání, platba přes QR.
+  - **Část pro administrátora:** přihlášení a role (admin vs worker), přehled, správa
+    rezervací (statusy, detail, QR kód, e-mail s QR, ruční vytvoření), správa kol
+    (varianty, fotky, pořadí), slevy (množstevní/sezónní), nastavení (bankovní údaje).
+  - Tabulka statusů rezervací + důležité poznámky (Resend free plán, platný IBAN,
+    stornování duplicit, víkend = min. 4 dny).
+- Manuál vychází z reálného chování kódu (stránky `app/`, `components/BikeCalendar.tsx`,
+  `lib/pricing.ts`, `lib/qr.ts`).
+
+### Ověření
+- Žádné změny kódu – pouze dokumentace, `tsc`/build se nemění.
+
 ## Poslední pracovní sezení (24. 9. 2026 – e-mail na GitHub Pages: HTTP 405)
 
 ### Hlášení uživatele
