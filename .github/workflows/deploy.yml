@@ -28,6 +28,9 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          # URL Supabase Edge Function pro e-maily (statický hosting nemá API route).
+          # Hodnota: https://VAS_PROJECT_REF.supabase.co/functions/v1/send-email
+          NEXT_PUBLIC_SEND_EMAIL_URL: ${{ secrets.NEXT_PUBLIC_SEND_EMAIL_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./out

@@ -7,6 +7,37 @@
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
 
+## Poslední pracovní sezení (24. 9. 2026 – e-mail na GitHub Pages: HTTP 405)
+
+### Hlášení uživatele
+- Po pushnutí na GitHub (deploy na GitHub Pages) se rezervace uloží, ale potvrzovací e-mail
+  nejde: „E-mailová služba neodpověděla JSON (HTTP 405). Na statickém hostingu API route
+  nefunguje – nasaďte Supabase Edge Function a nastavte NEXT_PUBLIC_SEND_EMAIL_URL."
+
+### Příčina
+- `NEXT_PUBLIC_SEND_EMAIL_URL` chyběl v `.github/workflows/deploy.yml` (build step).
+  `NEXT_PUBLIC_*` proměnné se zapékají do client bundle při `npm run build` → na GitHub Pages
+  se build vytvořil BEZ URL Edge Function → `lib/email.ts` posílal e-mail na lokální API route
+  `/api/send-email/`, která na statickém hostingu neexistuje (vrací HTTP 405 s HTML místo JSON).
+- Edge Function `send-email` je nasazená a funguje (ověřeno dříve), chybělo jen předání URL do buildu.
+
+### Oprava
+- **`.github/workflows/deploy.yml`:** do `env` buildu přidán
+  `NEXT_PUBLIC_SEND_EMAIL_URL: ${{ secrets.NEXT_PUBLIC_SEND_EMAIL_URL }}`.
+- **`.env.example`:** doplněna poznámka, že `NEXT_PUBLIC_SEND_EMAIL_URL` musí být nastaven
+  i jako GitHub Actions secret (Settings → Secrets and variables → Actions).
+
+### Ověření
+- `npx tsc --noEmit` bez chyb.
+
+### Důležité pro uživatele
+1. V GitHub repozitáři přidat secret `NEXT_PUBLIC_SEND_EMAIL_URL` s hodnotou
+   `https://ihsiyynhvxhcyuqbjlrm.supabase.co/functions/v1/send-email`
+   (Settings → Secrets and variables → Actions → New repository secret).
+2. Commit + push na `main` → GitHub Actions znovu nasadí stránky s URL Edge Function.
+3. Otestovat rezervaci na https://masu11.github.io/bikegallery_pujcovna – e-mail by měl odejít
+   (na free plánu Resendu jen na `marcel.suchomel@gmail.com`).
+
 ## Poslední pracovní sezení (24. 9. 2026 – datum a čas vytvoření v přehledu rezervací)
 
 ### Požadavek uživatele

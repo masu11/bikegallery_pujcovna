@@ -3,6 +3,15 @@
 > Přehled hotové a plánované práce.
 > Aktualizováno: 2026-09-24
 
+## Poslední sezení (24. 9. 2026 – e-mail na GitHub Pages: HTTP 405) ✅
+
+- [x] **Diagnóza:** po deploy na GitHub Pages e-mail nešel (HTTP 405, HTML místo JSON) – `NEXT_PUBLIC_SEND_EMAIL_URL` chyběl v `.github/workflows/deploy.yml`, takže build na GitHub Pages neobsahoval URL Edge Function a `lib/email.ts` volal neexistující API route `/api/send-email/`
+- [x] **`.github/workflows/deploy.yml`:** do `env` buildu přidán `NEXT_PUBLIC_SEND_EMAIL_URL: ${{ secrets.NEXT_PUBLIC_SEND_EMAIL_URL }}`
+- [x] **`.env.example`:** poznámka, že `NEXT_PUBLIC_SEND_EMAIL_URL` musí být i GitHub Actions secret
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [ ] **Uživatel:** přidat GitHub secret `NEXT_PUBLIC_SEND_EMAIL_URL` = `https://ihsiyynhvxhcyuqbjlrm.supabase.co/functions/v1/send-email` (Settings → Secrets and variables → Actions)
+- [ ] **Uživatel:** commit + push na `main` a otestovat rezervaci na GitHub Pages (e-mail jen na `marcel.suchomel@gmail.com` – free plán Resendu)
+
 ## Poslední sezení (24. 9. 2026 – datum a čas vytvoření v přehledu rezervací) ✅
 
 - [x] **`app/admin/rezervace/page.tsx`:** v seznamu rezervací se za číslem rezervace zobrazuje datum a čas vytvoření (`created_at`, formát `cs-CZ`), poté jméno zákazníka
