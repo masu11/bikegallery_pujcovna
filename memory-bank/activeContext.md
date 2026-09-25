@@ -7,6 +7,51 @@
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
 
+## Poslední pracovní sezení (25. 9. 2026 – globální přepínač e-mailů: Resend / Nodemailer SMTP) ✅
+
+### Požadavek uživatele
+- Vedle Resendu (zůstane na LIVE pod doménou) chtěl možnost posílat e-maily na jiné adresy
+  pro testování – přes Nodemailer napojený na vlastní Google účet (Gmail SMTP), s výhledem
+  na účet u domény bikegallery.cz (ONE.CZ). Globální přepínač Resend/Nodemailer, funkční
+  na local, GitHub Pages a Vercel.
+
+### Architektura (zjistěno)
+- `next.config.mjs` má `output: 'export'` (statický export) → na GH Pages a Vercelu běží
+  statika, jediný server-side tok e-mailů je Supabase Edge Function (Deno). Lokálně funguje
+  API route (Node.js). Proto přepínač je implementovan v OBOU místech.
+
+### Změny
+- **`app/api/send-email/route.ts`:** import `nodemailer`; nový globální přepínač
+  `EMAIL_PROVIDER` (resend default | smtp). SMTP větev: Nodemailer `createTransport`
+  s `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM`
+  (from default = SMTP_USER). Resend kód zůstal jako default.
+- **`supabase/functions/send-email/index.ts`:** stejný přepínač s `npm:nodemailer@10.0.10`
+  (Deno podporuje npm specifikátory). Kontrola `RESEND_API_KEY` přesunuta do resend větve
+  (aby SMTP fungoval bez Resend klíče).
+- **`.env.example`:** dokumentace `EMAIL_PROVIDER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
+  `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (Gmail: smtp.gmail.com:465 + app password).
+- **`package.json`:** `nodemailer@^10.0.10` + `@types/nodemailer@^8.0.2`.
+
+### Ověření
+- `npx tsc --noEmit` bez chyb (Edge Function je v tsconfig `exclude` – kontroluje se při deploy).
+- `npm run build` úspěšné (17 stránek + API route).
+
+### Důležité pro uživatele (nutné kroky)
+1. **Lokálně:** do `.env` přidat `EMAIL_PROVIDER=smtp`, `SMTP_HOST=smtp.gmail.com`,
+   `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USER=<gmail>`, `SMTP_PASS=<app password>`
+   (Google účet → Bezpečnost → App passwords – NE hlavní heslo!) a restartovat dev server.
+2. **Edge Function (GH Pages/Vercel):** `supabase secrets set EMAIL_PROVIDER=smtp SMTP_HOST=... SMTP_USER=... SMTP_PASS=...`
+   a `supabase functions deploy send-email` (nová verze s přepínačem).
+3. **Vercel:** pokud tam běží API route, nastavit stejné env proměnné v Vercel dashboardu.
+4. **Návrat na Resend:** stačí `EMAIL_PROVIDER=resend` (default) – žádné změny kódu.
+
+### Follow-up (oprava lokálního testu – NEXT_PUBLIC_SEND_EMAIL_URL)
+- Uživatel lokálně dostal Resend chybu („verify a domain") i když `.env` měl `EMAIL_PROVIDER=smtp`.
+- **Příčina:** v `.env` bylo nastavené `NEXT_PUBLIC_SEND_EMAIL_URL` (z dříšky) → klient posílal
+  e-maily na Edge Function (má ještě Resend secrets), ne na lokální API route se SMTP.
+- **Oprava:** v `.env` zakomentované `NEXT_PUBLIC_SEND_EMAIL_URL` (pro lokální test musí být prázdné;
+  odkomentovat jen pro test produkční cesty Edge Function). Restart dev serveru nutný.
+
 ## Poslední pracovní sezení (25. 9. 2026 – vercel.json: CSP blokoval QR obrázek v e-mailu) ✅
 
 ### Hlášení uživatele

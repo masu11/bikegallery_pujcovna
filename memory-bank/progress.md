@@ -3,6 +3,28 @@
 > Přehled hotové a plánované práce.
 > Aktualizováno: 2026-09-25
 
+## Poslední sezení (25. 9. 2026 – globální přepínač e-mailů: Resend / Nodemailer SMTP) ✅
+
+- [x] **Požadavek:** testování e-mailů na jiné adresy vedle Resendu (LIVE pod doménou) – Nodemailer
+      na Gmail SMTP, s výhledem na SMTP domény bikegallery.cz (ONE.CZ); globální přepínač
+      Resend/Nodemailer funkční na local, GH Pages a Vercel
+- [x] **Architektura:** `output: 'export'` → statika na GH Pages/Vercel, jediný server-side tok je
+      Edge Function (Deno); lokálně API route (Node.js) → přepínač v OBOU místech
+- [x] **`app/api/send-email/route.ts`:** `EMAIL_PROVIDER` (resend|smtp) + Nodemailer SMTP větev
+      (SMTP_HOST/PORT/SECURE/USER/PASS/FROM)
+- [x] **`supabase/functions/send-email/index.ts`:** stejný přepínač s `npm:nodemailer@10.0.10`;
+      kontrola RESEND_API_KEY přesunuta do resend větve
+- [x] **`.env.example`:** dokumentace EMAIL_PROVIDER + SMTP_* (Gmail: smtp.gmail.com:465 + app password)
+- [x] **`package.json`:** nodemailer@^10.0.10 + @types/nodemailer@^8.0.2
+- [x] Ověření: `npx tsc --noEmit` bez chyb, `npm run build` OK (17 stránek + API route)
+- [x] **Follow-up:** lokální test vracel Resend chybu („verify a domain") – příčina: `NEXT_PUBLIC_SEND_EMAIL_URL`
+      bylo nastavené v `.env` → klient posílal na Edge Function (Resend secrets), ne na lokální API route se SMTP;
+      oprava: v `.env` zakomentované `NEXT_PUBLIC_SEND_EMAIL_URL` (pro lokální test musí být prázdné)
+- [ ] **Uživatel:** restart dev serveru (Next.js čte .env jen při startu) a otestovat rezervaci znovu
+- [ ] **Uživatel:** Edge Function → `supabase secrets set EMAIL_PROVIDER=smtp SMTP_*` + `supabase functions deploy send-email`
+- [ ] **Uživatel:** (Vercel) env proměnné v dashboardu, pokud tam běží API route
+- [ ] **Uživatel:** otestovat rezervaci na local/GH Pages/Vercel – e-mail na libovolnou adresu
+
 ## Poslední sezení (25. 9. 2026 – vercel.json: CSP blokoval QR obrázek v e-mailu) ✅
 
 - [x] **Diagnóza:** z Vercelu e-mail s QR dorazí, ale obrázek chybí; z lokálu funguje

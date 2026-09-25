@@ -1,10 +1,17 @@
 // Supabase Edge Function: send-email
-// Odesílá e-maily přes Resend.
+// Odesílá e-maily přes Resend (default) nebo SMTP (Nodemailer).
+//
+// Globální přepínač: EMAIL_PROVIDER=resend (default) | smtp
+// - resend: posílá přes Resend API (RESEND_API_KEY, RESEND_FROM).
+// - smtp: posílá přes SMTP (Nodemailer) – např. Gmail (smtp.gmail.com) nebo
+//   SMTP domény (ONE.CZ). Konfigurace: SMTP_HOST, SMTP_PORT, SMTP_SECURE,
+//   SMTP_USER, SMTP_PASS, SMTP_FROM (volitelná from adresa).
 //
 // Nasazení:
 //   1. supabase login
 //   2. supabase link --project-ref VAS_PROJECT_REF
 //   3. supabase secrets set RESEND_API_KEY=re_xxx RESEND_FROM="..." SEND_EMAIL_SECRET=...
+//      (pro SMTP místo Resendu: supabase secrets set EMAIL_PROVIDER=smtp SMTP_HOST=... SMTP_USER=... SMTP_PASS=...)
 //   4. supabase functions deploy send-email
 //
 // Volání z klienta:
@@ -21,6 +28,8 @@
 //   Poznámka: Edge Functions jsou bezstavové, limit je per instance.
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+// Deno podporuje npm knihovny přes npm: specifikátor (stejná verze jako v package.json).
+import nodemailer from 'npm:nodemailer@10.0.10'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const FROM_EMAIL = Deno.env.get('RESEND_FROM') || 'Rezervace <rezervace@vasedomena.cz>'
@@ -78,10 +87,6 @@ serve(async (req) => {
     return json({ error: 'Unauthorized' }, 401)
   }
 
-  if (!RESEND_API_KEY) {
-    return json({ error: 'RESEND_API_KEY not set' }, 500)
-  }
-
   // Rate limiting podle IP
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   if (isRateLimited(`ip:${ip}`, RATE_LIMIT.perIp.max, RATE_LIMIT.perIp.windowMs)) {
@@ -113,6 +118,36 @@ serve(async (req) => {
       )
     ) {
       return json({ error: 'Too many emails to this address. Try again later.' }, 429)
+    }
+
+    // Globální přepínač e-mailového providera: resend (default) | smtp (Nodemailer).
+    const provider = Deno.env.get('EMAIL_PROVIDER') || 'resend'
+
+    if (provider === 'smtp') {
+      const smtpHost = Deno.env.get('SMTP_HOST')
+      const smtpUser = Deno.env.get('SMTP_USER')
+      const smtpPass = Deno.env.get('SMTP_PASS')
+      if (!smtpHost || !smtpUser || !smtpPass) {
+        return json({ error: 'SMTP_HOST, SMTP_USER or SMTP_PASS not set' }, 500)
+      }
+      const smtpPort = Number(Deno.env.get('SMTP_PORT') || 587)
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        // Port 465 = SSL, port 587 = STARTTLS. SMTP_SECURE=true vynutí SSL.
+        secure: Deno.env.get('SMTP_SECURE')
+          ? Deno.env.get('SMTP_SECURE') === 'true'
+          : smtpPort === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+      })
+      const from = Deno.env.get('SMTP_FROM') || smtpUser
+      await transporter.sendMail({ from, to, subject, html })
+      return json({ ok: true }, 200)
+    }
+
+    // --- RESEND (default) ---
+    if (!RESEND_API_KEY) {
+      return json({ error: 'RESEND_API_KEY not set' }, 500)
     }
 
     const res = await fetch('https://api.resend.com/emails', {
