@@ -3,6 +3,18 @@
 > Přehled hotové a plánované práce.
 > Aktualizováno: 2026-09-25
 
+## Poslední sezení (25. 9. 2026 – vercel.json: CSP blokoval QR obrázek v e-mailu) ✅
+
+- [x] **Diagnóza:** z Vercelu e-mail s QR dorazí, ale obrázek chybí; z lokálu funguje
+- [x] **Příčina:** CSP v `vercel.json` měl `img-src` bez `blob:` → `svgToPngDataUri()` v
+      `lib/qrImage.ts` nemohl načíst SVG přes `URL.createObjectURL()` (blob URL) → fallback na SVG
+      → e-mailové klienty SVG nerenderují → QR v e-mailu chybí
+- [x] **Sekundární konflikt:** `img-src` bez domény Supabase Storage → fotky kol by se na Vercelu
+      nezobrazovaly (`BikeCard.tsx` načítá fotky ze Storage)
+- [x] **`vercel.json`:** do CSP `img-src` přidáno `blob:` + `https://ihsiyynhvxhcyuqbjlrm.supabase.co`
+- [x] Ověření: JSON validní (node parse OK)
+- [ ] **Uživatel:** commit + push na `main` (Vercel nasadí nové headers) a otestovat QR e-mail z adminu
+
 ## Poslední sezení (25. 9. 2026 – chyba „null value in column total_price" stále na PC) ✅
 
 - [x] **Diagnóza:** chyba přetrvává jen na PC (localhost + GitHub Pages), z mobilu a adminu funguje

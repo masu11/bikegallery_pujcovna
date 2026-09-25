@@ -7,6 +7,35 @@
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
 
+## Poslední pracovní sezení (25. 9. 2026 – vercel.json: CSP blokoval QR obrázek v e-mailu) ✅
+
+### Hlášení uživatele
+- Odeslání QR kódu e-mailem funguje z lokálu, ale z Vercelu QR obrázek v e-mailu nepřijde
+  (e-mail dorazí, obrázek chybí).
+
+### Diagnóza (příčina nalezena)
+- `vercel.json` nastavuje CSP hlavičky pro celý web (`source: "/(.*)"`).
+- CSP měl `img-src 'self' data: https://cdn.myshoptet.com` – **chyběl `blob:`**.
+- Tok QR e-mailu (probíhá v prohlížeči v adminu):
+  1. `lib/qrImage.ts` – `svgToPngDataUri()` načte SVG přes `URL.createObjectURL()` do `<img>`
+     (URL typu `blob:https://…`) a čeká na `onload`.
+  2. Na Vercelu CSP zablokoval načtení `blob:` obrázku → `onerror` → `svgToPngDataUri()` vyhodí chybu.
+  3. `app/admin/rezervace/page.tsx` – catch → fallback `qrUrl = qrSvg` (SVG) → e-mail se odešle
+     se SVG, které Gmail/Outlook nerenderují → QR obrázek v e-mailu chybí.
+- Lokálně CSP není → blob se načte → PNG → upload do Storage → veřejný URL → e-mail funguje.
+- Sekundární konflikt: v `img-src` chyběla i doména Supabase Storage
+  (`https://ihsiyynhvxhcyuqbjlrm.supabase.co`) → na Vercelu by se nezobrazovaly ani fotky kol
+  (`BikeCard.tsx` načítá fotky přes `<img src={photoUrl}>`).
+
+### Oprava
+- **`vercel.json`:** do CSP `img-src` přidáno `blob:` (oprava QR e-mailu) a
+  `https://ihsiyynhvxhcyuqbjlrm.supabase.co` (fotky kol ze Storage).
+- Ověřeno: JSON validní (`node -e` parse OK).
+
+### Důležité pro uživatele
+- Commit + push na `main` → Vercel nasadí novou konfiguraci (headers se aplikují automaticky).
+- Otestovat potvrzení rezervace v adminu na Vercelu – QR obrázek by měl v e-mailu dorazit.
+
 ## Poslední pracovní sezení (25. 9. 2026 – chyba „null value in column total_price" stále na PC) ✅
 
 ### Hlášení uživatele
