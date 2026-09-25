@@ -7,6 +7,25 @@
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
 
+## Poslední pracovní sezení (25. 9. 2026 – BCC kopie odchozích e-mailů na admin) ✅
+
+### Požadavek uživatele
+- Všechny odchozí e-maily (potvrzení rezervace, QR kód, atd.) se mají posílat i na admin e-mail `marcel.suchomnel@gmail.com` (resp. `SMTP_USER`) jako BCC kopie.
+
+### Změny
+- **`app/api/send-email/route.ts`:** přidána proměnná `adminEmail` (čte `ADMIN_EMAIL` nebo fallback na `SMTP_USER`); při odesílání přes SMTP (Nodemailer) i Resend se nastaví `bcc` na admin e-mail.
+- **`supabase/functions/send-email/index.ts`:** stejná logika – `adminEmail` z `ADMIN_EMAIL` nebo `SMTP_USER`; BCC v obou větvích (SMTP + Resend).
+- **`.env.example`:** nová proměnná `ADMIN_EMAIL=marcel.suchomnel@gmail.com` s vysvětlením (fallback na `SMTP_USER`).
+
+### Ověření
+- `npx tsc --noEmit` bez chyb.
+- Build by měl proběhnout bez problémů.
+
+### Důležité pro uživatele
+1. Do `.env` přidat `ADMIN_EMAIL=marcel.suchomnel@gmail.com` (nebo jiný e-mail pro BCC kopie).
+2. Pro Edge Function: `supabase secrets set ADMIN_EMAIL=marcel.suchomnel@gmail.com` a `supabase functions deploy send-email`.
+3. Restart dev serveru (Next.js čte `.env` jen při startu).
+
 ## Poslední pracovní sezení (25. 9. 2026 – globální přepínač e-mailů: Resend / Nodemailer SMTP) ✅
 
 ### Požadavek uživatele

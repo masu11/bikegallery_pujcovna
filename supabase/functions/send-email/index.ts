@@ -123,6 +123,9 @@ serve(async (req) => {
     // Globální přepínač e-mailového providera: resend (default) | smtp (Nodemailer).
     const provider = Deno.env.get('EMAIL_PROVIDER') || 'resend'
 
+    // Admin email pro BCC (kopie všech odchozích e-mailů)
+    const adminEmail = Deno.env.get('ADMIN_EMAIL') || Deno.env.get('SMTP_USER')
+
     if (provider === 'smtp') {
       const smtpHost = Deno.env.get('SMTP_HOST')
       const smtpUser = Deno.env.get('SMTP_USER')
@@ -141,7 +144,11 @@ serve(async (req) => {
         auth: { user: smtpUser, pass: smtpPass },
       })
       const from = Deno.env.get('SMTP_FROM') || smtpUser
-      await transporter.sendMail({ from, to, subject, html })
+      const mailOptions: any = { from, to, subject, html }
+      if (adminEmail) {
+        mailOptions.bcc = adminEmail
+      }
+      await transporter.sendMail(mailOptions)
       return json({ ok: true }, 200)
     }
 
@@ -161,6 +168,7 @@ serve(async (req) => {
         to: [to],
         subject,
         html,
+        bcc: adminEmail ? [adminEmail] : undefined,
       }),
     })
 

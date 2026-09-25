@@ -3,6 +3,16 @@
 > Přehled hotové a plánované práce.
 > Aktualizováno: 2026-09-25
 
+## Poslední sezení (25. 9. 2026 – BCC kopie odchozích e-mailů na admin) ✅
+
+- [x] **Požadavek:** všechny odchozí e-maily se mají posílat i na `marcel.suchomnel@gmail.com` (resp. `SMTP_USER`) jako BCC kopie
+- [x] **`app/api/send-email/route.ts`:** přidána `adminEmail` (ENV `ADMIN_EMAIL` nebo fallback `SMTP_USER`); BCC v SMTP (Nodemailer) i Resend větvi
+- [x] **`supabase/functions/send-email/index.ts`:** stejná logika – `adminEmail` z `ADMIN_EMAIL` nebo `SMTP_USER`; BCC v obou větvích
+- [x] **`.env.example`:** nová proměnná `ADMIN_EMAIL=marcel.suchomnel@gmail.com` s vysvětlením (fallback na `SMTP_USER`)
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [ ] **Uživatel:** do `.env` přidat `ADMIN_EMAIL=marcel.suchomnel@gmail.com` a restart dev serveru
+- [ ] **Uživatel:** Edge Function → `supabase secrets set ADMIN_EMAIL=marcel.suchomnel@gmail.com` + `supabase functions deploy send-email`
+
 ## Poslední sezení (25. 9. 2026 – globální přepínač e-mailů: Resend / Nodemailer SMTP) ✅
 
 - [x] **Požadavek:** testování e-mailů na jiné adresy vedle Resendu (LIVE pod doménou) – Nodemailer

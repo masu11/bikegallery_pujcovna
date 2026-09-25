@@ -86,6 +86,9 @@ export async function POST(req: NextRequest) {
     //   SMTP_USER, SMTP_PASS, SMTP_FROM (volitelná from adresa).
     const provider = process.env.EMAIL_PROVIDER || 'resend'
 
+    // Admin email pro BCC (kopie všech odchozích e-mailů)
+    const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER
+
     if (provider === 'smtp') {
       const smtpHost = process.env.SMTP_HOST
       const smtpUser = process.env.SMTP_USER
@@ -107,7 +110,11 @@ export async function POST(req: NextRequest) {
         auth: { user: smtpUser, pass: smtpPass },
       })
       const from = process.env.SMTP_FROM || smtpUser
-      await transporter.sendMail({ from, to, subject, html })
+      const mailOptions: any = { from, to, subject, html }
+      if (adminEmail) {
+        mailOptions.bcc = adminEmail
+      }
+      await transporter.sendMail(mailOptions)
       return NextResponse.json({ ok: true })
     }
 
@@ -125,7 +132,7 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to: [to], subject, html }),
+      body: JSON.stringify({ from, to: [to], subject, html, bcc: adminEmail ? [adminEmail] : undefined }),
     })
 
     const data = await res.json()
