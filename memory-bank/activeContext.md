@@ -1,11 +1,57 @@
 # Active Context
 
 > Aktuální stav projektu, poslední změny a otevřené otázky.
-> Aktualizováno: 2026-09-24
+> Aktualizováno: 2026-09-25
 
 ## Pravidlo komunikace
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
+
+## Poslední pracovní sezení (25. 9. 2026 – chyba „null value in column total_price" stále na PC) ✅
+
+### Hlášení uživatele
+- Chyba při uložení rezervace z klientské části **na PC** (localhost i GitHub Pages):
+  `Rezervaci se nepodařilo uložit: null value in column "total_price" of relation "reservations" violates not-null constraint`.
+- **Z mobilu (Android) funguje** a **z adminu funguje**.
+
+### Diagnostika (ověřeno)
+1. **Produkční DB má NOVOU funkci `create_reservation`** – přímý test RPC přes REST API
+   (s `p_total_price: null` a neexistující variantou) vrátil `Vybrané kolo (varianta) není dostupné.`
+   → funkce cenu počítá na serveru, `total_price` vkládá jako `0`, nikdy `null`. ✅
+2. **Nasazený kód na GitHub Pages je aktuální** – stažen JS chunk `/rezervace`:
+   volá RPC `create_reservation`, posílá `p_total_price` jako číslo (fallback `0`),
+   má kontrolu `Number.isFinite` na košík. ✅
+3. **Lokální kód je aktuální** (git čistý, `main` = `origin/main`). ✅
+4. **Příčina chyby na PC:** prohlížeč na PC běží STARÝ JS (verze s přímými inserty
+   `total_price: totals.total` – commity `41007de`/`d9738c6`/`d2f8241`) a/nebo má v
+   localStorage STARÁ data košíku, kde `totals.total` je `NaN` → JSON serializuje `NaN`
+   jako `null` → PostgreSQL vrací not-null chybu. Mobil funguje, protože běží nový JS
+   s čerstvým košíkem.
+
+### Opravy (pojistky, aby chyba nešla nikdy opakovat)
+- **`supabase/schema.sql`:** nový trigger `trg_reservations_coalesce_prices` +
+  funkce `reservations_coalesce_prices()` – `BEFORE INSERT OR UPDATE` na `reservations`
+  převede `total_price`/`discount_amount` z `null` na `0`. Rezervace se uloží vždy,
+  bez ohledu na verzi klienta (cenu pak dopočítá `create_reservation` na serveru nebo admin).
+- **`lib/cart.ts`:** `getCart()` nyní při načtení automaticky ODEBERE neplatné položky
+  (nečíselné `price_per_day`/`days`, chybějící `variant_id`/`start_date`/`end_date`)
+  a uloží vyčištěný košík zpět do localStorage.
+
+### Ověření
+- `npx tsc --noEmit` bez chyb.
+
+### Potvrzení uživatele ✅
+- **Trigger pomohl** – rezervace z klientské části nyní funguje (uživatel potvrdil,
+  že to jede na Vercelu i GitHubu bez nutnosti nového deploye). Chyba
+  „null value in column total_price" je vyřešena.
+
+### Důležité pro uživatele (nutné kroky)
+1. **Supabase:** spustit CELÝ `supabase/schema.sql` v SQL Editoru (vytvoří trigger
+   `trg_reservations_coalesce_prices`).
+2. Commit + push na `main` → GitHub Actions nasadí nový build.
+3. **Na PC:** hard refresh (Ctrl+F5) na GitHub Pages, restart dev serveru + hard refresh
+   na localhostu a **vyčistit košík** (odebrat kola a přidat znovu, případně vymazat
+   localStorage pro danou doménu) – stará data košíku s `NaN` cenami jsou hlavní spouštěč.
 
 ## Poslední pracovní sezení (24. 9. 2026 – chyba „null value in column total_price" na GitHubu) ✅
 

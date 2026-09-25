@@ -1,7 +1,31 @@
 # Progress
 
 > Přehled hotové a plánované práce.
-> Aktualizováno: 2026-09-24
+> Aktualizováno: 2026-09-25
+
+## Poslední sezení (25. 9. 2026 – chyba „null value in column total_price" stále na PC) ✅
+
+- [x] **Diagnóza:** chyba přetrvává jen na PC (localhost + GitHub Pages), z mobilu a adminu funguje
+- [x] **Ověřeno:** produkční DB má NOVOU funkci `create_reservation` (test RPC s `p_total_price: null`
+      vrátil chybu varianty, ne total_price → cena se počítá na serveru, `total_price = 0` nikdy `null`)
+- [x] **Ověřeno:** nasazený JS na GitHub Pages je aktuální (volá RPC, posílá `p_total_price` jako číslo,
+      kontrola `Number.isFinite` na košík); lokální kód je aktuální (git čistý)
+- [x] **Příčina:** prohlížeč na PC běží STARÝ JS (přímé inserty `total_price: totals.total` – commity
+      `41007de`/`d9738c6`/`d2f8241`) a/nebo má stará data košíku v localStorage, kde `totals.total` je
+      `NaN` → JSON serializuje `NaN` jako `null` → not-null chyba
+- [x] **`supabase/schema.sql`:** nový trigger `trg_reservations_coalesce_prices` (funkce
+      `reservations_coalesce_prices()`) – `BEFORE INSERT OR UPDATE` na `reservations` převede
+      `total_price`/`discount_amount` z `null` na `0` (pojistka proti starým verzím klienta)
+- [x] **`lib/cart.ts`:** `getCart()` automaticky odebírá neplatné položky košíku (nečíselné
+      `price_per_day`/`days`, chybějící `variant_id`/`start_date`/`end_date`) a ukládá vyčištěný košík
+- [x] Ověření: `npx tsc --noEmit` bez chyb
+- [x] **Potvrzeno uživatelem ✅:** trigger pomohl – rezervace z klientské části nyní funguje
+      (na Vercelu i GitHubu bez nutnosti nového deploye). Chyba „null value in column total_price"
+      je vyřešena.
+- [ ] **Uživatel:** spustit CELÝ `supabase/schema.sql` v Supabase SQL Editoru (vytvoří trigger)
+- [ ] **Uživatel:** commit + push na `main` (GitHub Actions nasadí nový build)
+- [ ] **Uživatel:** na PC hard refresh (Ctrl+F5) na GitHub Pages + restart dev serveru + vyčistit košík
+      (stará data košíku s `NaN` cenami jsou hlavní spouštěč chyby)
 
 ## Poslední sezení (24. 9. 2026 – chyba „null value in column total_price" na GitHubu) ✅
 

@@ -395,6 +395,28 @@ grant execute on function public.create_reservation(
   text, text, text, text, text, date, date, numeric, numeric, text, jsonb
 ) to anon, authenticated;
 
+-- ---------- Pojistka: ceny nikdy null ----------
+-- Starší verze klienta (přímé inserty) mohly poslat total_price/discount_amount
+-- jako null/NaN → PostgreSQL vracel „null value in column total_price".
+-- Trigger převede null na 0, takže se rezervace vždy uloží (cenu pak dopočítá
+-- create_reservation na serveru nebo admin).
+create or replace function public.reservations_coalesce_prices()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.total_price := coalesce(new.total_price, 0);
+  new.discount_amount := coalesce(new.discount_amount, 0);
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_reservations_coalesce_prices on public.reservations;
+create trigger trg_reservations_coalesce_prices
+  before insert or update on public.reservations
+  for each row execute function public.reservations_coalesce_prices();
+
 -- ---------- RLS: aktivace ----------
 alter table public.bikes enable row level security;
 alter table public.bike_variants enable row level security;

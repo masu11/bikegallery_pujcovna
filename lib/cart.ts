@@ -6,7 +6,21 @@ export function getCart(): CartItem[] {
   if (typeof window === 'undefined') return []
   try {
     const raw = localStorage.getItem(CART_KEY)
-    return raw ? (JSON.parse(raw) as CartItem[]) : []
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as CartItem[]
+    // Ochrana před starou/poškozenou datou v localStorage: odeber položky
+    // s neplatnými cenami/dny (jinak by se do DB poslal null/NaN).
+    const valid = parsed.filter(
+      (it) =>
+        it &&
+        Number.isFinite(it.price_per_day) &&
+        Number.isFinite(it.days) &&
+        typeof it.variant_id === 'string' &&
+        typeof it.start_date === 'string' &&
+        typeof it.end_date === 'string',
+    )
+    if (valid.length !== parsed.length) saveCart(valid)
+    return valid
   } catch {
     return []
   }
