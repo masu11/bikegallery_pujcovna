@@ -17,6 +17,11 @@ export const metadata: Metadata = {
   },
   description:
     'Půjčovna gravel kol — rezervujte si gravel bike online. Cannondale, Ridley, Rondo, Superior a další značky.',
+  // Testovací provoz: zabrání indexaci stránek vyhledávači (noindex, nofollow).
+  robots: {
+    index: false,
+    follow: false,
+  },
 }
 
 export const viewport: Viewport = {
@@ -32,6 +37,10 @@ export default function RootLayout({
   return (
     <html lang="cs" className={sourceSans.variable}>
       <body className="flex min-h-screen flex-col">
+        <div className="bg-amber-100 px-4 py-2 text-center text-sm font-semibold text-amber-900">
+          ⚠️ Testovací provoz – stránky slouží pouze k testování, rezervace zatím nejsou reálné
+          a nelze zde objednávat.
+        </div>
         <Header />
         <main className="flex-1">{children}</main>
         <Footer />

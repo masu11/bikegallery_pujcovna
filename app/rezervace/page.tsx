@@ -195,6 +195,9 @@ export default function ReservationPage() {
       <p className="mt-2 text-gray-600">
         Zkontrolujte vybraná kola a vyplňte kontaktní údaje. Rezervaci potvrdíme e-mailem.
       </p>
+      <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+        ⚠️ Testovací provoz – rezervace zatím nejsou reálné a nelze zde objednávat.
+      </div>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-5">
         {/* Košík */}

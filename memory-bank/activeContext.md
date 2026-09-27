@@ -1,11 +1,48 @@
 # Active Context
 
 > Aktuální stav projektu, poslední změny a otevřené otázky.
-> Aktualizováno: 2026-09-25
+> Aktualizováno: 2026-09-27
 
 ## Pravidlo komunikace
 
 - **V chatu píšeme vždy jenom česky** (odpovědi i komentáře kódu). Zapsáno v `.clinerules`.
+
+## Poslední pracovní sezení (27. 9. 2026 – zamezení indexace testovacích stránek + testovací banner) ✅
+
+### Požadavek uživatele
+- Stránky na Vercelu (`bikegallery-pujcovna.vercel.app`) a GitHub Pages
+  (`masu11.github.io/bikegallery_pujcovna/`) se mají NEindexovat vyhledávači,
+  dokud probíhá interní testovací proces.
+- Přidat do textu na stránce a do e-mailů poznámku, že se jedná o testovací stránky
+  a nelze na nich zatím nic reálně objednávat.
+
+### Změny (Možnost 1 – zamezení indexace + Možnost 2 – banner/poznámky)
+- **`app/layout.tsx`:** do `metadata` přidáno `robots: { index: false, follow: false }` →
+  vygeneruje `<meta name="robots" content="noindex, nofollow">` na KAŽDOU stránku
+  (funguje na obou hostinzích, protože jde o statický export; `noindex` odstraní
+  i už indexované stránky při recrawlu). Nad `<Header />` přidán testovací banner
+  (žlutý pás: „⚠️ Testovací provoz – stránky slouží pouze k testování…").
+- **`app/robots.ts`:** nový soubor – `robots.txt` s `User-agent: *` + `Disallow: /`
+  (zabrání procházení; NEodstraní už indexované stránky – proto i noindex meta).
+- **`vercel.json`:** do headers přidána hlavička `X-Robots-Tag: noindex, nofollow`
+  (jen Vercel; GitHub Pages vlastní hlavičky nepodporuje).
+- **`app/rezervace/page.tsx`:** varování pod úvodním textem formuláře
+  („⚠️ Testovací provoz – rezervace zatím nejsou reálné…").
+- **`lib/email.ts`:** do obou šablon (`confirmationEmailHtml`, `qrEmailHtml`) přidána
+  poznámka o testovacím provozu. Edge Function `send-email` nemá vlastní šablony –
+  jen přeposílá `html` od klienta, takže poznámka pokrývá i produkční e-maily.
+
+### Ověření
+- `npx tsc --noEmit` bez chyb.
+- `npm run build` úspěšné (18 stránek + `/robots.txt`).
+
+### Důležité pro uživatele
+1. Commit + push na `main` → GitHub Actions nasadí nový build na GH Pages, Vercel nasadí
+   nové headers (X-Robots-Tag) automaticky.
+2. Už indexované stránky odstranit z Google: Search Console → URL Inspection →
+   Request removal (nebo počkat na recrawl s noindex).
+3. Po nasazení zkontrolovat: HTML stránek obsahuje `<meta name="robots" content="noindex, nofollow">`,
+   `/robots.txt` vrací `Disallow: /`, na Vercelu hlavička `X-Robots-Tag: noindex, nofollow`.
 
 ## Poslední pracovní sezení (25. 9. 2026 – BCC kopie odchozích e-mailů na admin) ✅
 

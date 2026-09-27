@@ -184,6 +184,10 @@ export function confirmationEmailHtml(params: {
         <tbody>${itemsRowsHtml(params.items)}</tbody>
       </table>
       <p>Jakmile rezervaci potvrdíme, obdržíte e-mail s QR kódem na platbu.</p>
+      <p style="color: #b00020; font-size: 12px;">
+        ⚠️ Testovací provoz – tento e-mail je součástí testování, rezervace zatím nejsou reálné
+        a nelze zde objednávat.
+      </p>
       <p style="color: #999; font-size: 12px;">Bike Gallery Půjčovna</p>
     </div>
   `
@@ -228,6 +232,10 @@ export function qrEmailHtml(params: {
         <img src="${escapeHtml(params.qrUrl)}" alt="QR kód na platbu" width="200" height="200" style="display:block; width:200px; height:200px;" />
       </div>
       <p>Po připsání platby je termín definitivně obsazený.</p>
+      <p style="color: #b00020; font-size: 12px;">
+        ⚠️ Testovací provoz – tento e-mail je součástí testování, rezervace zatím nejsou reálné
+        a nelze zde objednávat.
+      </p>
       <p style="color: #999; font-size: 12px;">Bike Gallery Půjčovna</p>
     </div>
   `

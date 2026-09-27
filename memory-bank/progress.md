@@ -1,7 +1,21 @@
 # Progress
 
 > Přehled hotové a plánované práce.
-> Aktualizováno: 2026-09-25
+> Aktualizováno: 2026-09-27
+
+## Poslední sezení (27. 9. 2026 – zamezení indexace testovacích stránek + testovací banner) ✅
+
+- [x] **Požadavek:** stránky na Vercelu a GitHub Pages se mají NEindexovat vyhledávači (interní testovací proces)
+- [x] **`app/layout.tsx`:** `robots: { index: false, follow: false }` v metadata → `<meta name="robots" content="noindex, nofollow">` na všech stránkách (funguje na obou hostinzích, odstraní i už indexované stránky)
+- [x] **`app/robots.ts`:** nový soubor – `robots.txt` s `User-agent: *` + `Disallow: /`
+- [x] **`vercel.json`:** hlavička `X-Robots-Tag: noindex, nofollow` (jen Vercel; GH Pages hlavičky nepodporuje)
+- [x] **`app/layout.tsx`:** testovací banner nad Headerem (viditelný na všech stránkách)
+- [x] **`app/rezervace/page.tsx`:** varování o testovacím provozu pod úvodním textem
+- [x] **`lib/email.ts`:** poznámka o testovacím provozu v obou šablonách (`confirmationEmailHtml`, `qrEmailHtml`); Edge Function jen přeposílá html – žádná změna tam nutná
+- [x] Ověření: `npx tsc --noEmit` bez chyb, `npm run build` OK (18 stránek + /robots.txt)
+- [ ] **Uživatel:** commit + push na `main` (GH Actions + Vercel nasadí automaticky)
+- [ ] **Uživatel:** odstranit už indexované stránky v Google Search Console (URL Inspection → Request removal)
+- [ ] **Uživatel:** po nasazení zkontrolovat noindex meta, robots.txt a X-Robots-Tag hlavičku
 
 ## Poslední sezení (25. 9. 2026 – BCC kopie odchozích e-mailů na admin) ✅
 
